@@ -1,0 +1,87 @@
+#Pi Zero Upgrade Overview
+#Prepared by Ben Taylor, 20/03/2026
+-Pi Zero 2W
+-32Gb SD card with Raspberry Pi OS Lite 32 Bit (Released 04/12/2025)
+-Pi is mounted to controller PCB which provides 5V power via GPIO headers. 
+
+System Updates and Dependencies: (Currently installed as of 18/03/2026)
+Python - Version: 3.13.5
+Skyfield - Version: 1.53
+pyserial - Version: 3.5
+OS version - PRETTY_NAME="Raspbian GNU/Linux 13 (trixie)"
+
+Boot Configurations:
+-Disabled Bluetooth, enabled USB OTG, (see config.txt in Pi_Zero_Handover/Config)
+-cmdline.txt = console=tty1 root=PARTUUID=57096a09-02 rootfstype=ext4 fsck.repair=yes rootwait modules-load=dwc2,g_ether cfg80211.ieee80211_regdom=ZA
+*Serial console disabled. Hardware UART enabled. 
+Login shell over serial: NO
+Serial port hardware enabled: YES
+
+Network Configurations: (Terminal commands used)
+-sudo nano /etc/NetworkManager/system-connections/usb0.nmconnection
+Config:
+[connection]
+id=usb0
+interface-name=usb0
+type=ethernet
+[ipv4]
+method=link-local
+[ipv6]
+method=ignore
+Permission:
+sudo chmod 600 /etc/NetworkManager/system-connections/usb0.nmconnection
+
+SSH Settings:
+hostname: esl-gs-01
+Username: esl
+Password: Kutuzov1812
+*SSH currently enabled over USB OTG and WiFi
+**Currently only configured for one WiFi home network and wont work for Eduroam.
+
+Current Overview: 
+Pi Zero 2W has hardware UART connection with STM32 F407 MCU on Pi GPIO 14/15 via /dev/serial0, BAUD 115200, (using ttyAMA0). 
+The STM32 sends telemetry frames every 100ms as: $TLM,az_actual,az_target,el_actual,el_target\n
+The Pi sends target angles @ 1Hz formatted as AZ###.# EL###.#\n (fixed 16-byte frame).  
+*Note: system should be upgraded to send dish status and error codes. Requires change of STM code as well.
+
+Old Pi Software State:
+Pi has been reset and new file structure has been created. Original project had python scripts which had to be manually run. All these old scripts are in folder: "Pi_Zero_Handover/Prototype_Pi_Scripts". 
+Main scripts were:
+TLE.py - Script ran by user. TLE age checking, pass prediction, countdown and tracking loop.
+tracker.py - SatelliteTracker class. Wraps Skyfield. Accepts TLE strings, provides get_position(time_utc), returns (az, el, dist_km, is_visible).
+uart.py - UARTComm class. Opens /dev/serial0 at 115200. send_position(az, el) transmits 16-byte ASCII frame: AZ###.# EL###.#\n.
+log.py - Standalone old logger. Writes timestamped CSV. Outdated and poor logging implementation.
+TLE.csv - TLE data file. Each satellite has 3 lines: Name, TLE line 1, TLE line 2. Must be kept up to date (max age configurable, default 7 days).
+step.py - Used during testing when tuning PID on a DC motor ground station during skripsie last year. 
+
+New Pi Zero Software State:
+PiZero is reset and flashed with only the changes settings as detailed. A preliminary folder structure has been created which can be changed as desired. 
+The main directory and git repo root is /home/esl/groundstation/ which contains:
+- comms/ 
+- tracking/
+- dashboard/
+- logs/
+- scripts/
+main.py
+config.py
+
+All folders are currently empty (barring scripts/ and logs/) and main.py is blank. In scripts/, a testing script, test_01.py, was developed for the azimuth encoder test. The UART link between the STM32 MCU and Pi works for this new script. The STM32 code now works in this format and the prototype scripts UART formatting should be ignored. Additionally, config.py contains global settings. These should be expanded as the project grows. 
+
+Path Forward: 
+Major requirement is to develop a new reliable main.py which starts automatically on boot, such as with systemd, and integrates all functionalities.
+The satellite tracking with Skyfield and TLE works well and the preliminary scripts TLE.py and tracker.py should only have to be slightly modified.
+The system should have two primary "modes". It should either work with external MCS (mission control software) where target AZ and EL angles must be received, formatted, and sent to STM32 MCU. Alternatively, a satellite name/TLE data will be sent and the Pi must generate the target angles. The previous system relied on a local "TLE.csv" file which must be manually updated. Automating the TLE update via a secure channel is a open problem. 
+Additionally, a simple method to give the STM32 step/ramp reference inputs would be very useful for when the dish control loops PID gains are tuned. 
+
+The major upgrades required with no current development is a local browser interface and the ethernet software layer. 
+
+Ethernet Upgrade:
+A revised controller PCB is under development. It will use a FE1.1S USB hub IC and a RTL8152B-VB-CG USB-to-Ethernet IC to break out the Pi OTG port via pogo pins — giving the Pi a USB-A port and a 10/100 Ethernet connection.
+This Ethernet port will connect to a closed local network switch in the lab. The Pi has in-kernel drivers for both chips, so no additional driver work should be required.
+
+Browser Upgrade:
+The browser interface should be hosted locally on the Pi and accessible from any machine on the closed network. The primary purpose is live monitoring — showing time, current target AZ/EL, actual AZ/EL reported by the STM32, and error between them. Later, the STM32 firmware will also be updated to send states and error messages which should also show on the broswer. A pass countdown and satellite name display would be useful during tracking operations. A ground track map showing satellite position over Earth based on TLE data would be a very cool addition. Leaftlet.js could be used for this map. The interface could also allow basic commanding — selecting a satellite to track, or entering manual AZ/EL targets. The recommended approach is a Flask or FastAPI backend with a WebSocket pushing telemetry to the browser at 1Hz. 
+N.B! The serial port to STM32 can only be opened by one process, so the web server must absorb the UART handling rather than running alongside other scripts.
+
+
+

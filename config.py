@@ -1,0 +1,12 @@
+# config.py 
+LATITUDE    = -33.9279
+LONGITUDE   =  18.8653
+ELEVATION_M =  121
+
+UART_PORT     = "/dev/serial0"
+UART_BAUDRATE = 115200
+
+LOG_DIR         = "logs"
+TLE_MAX_AGE_DAYS = 7
+MAX_SEARCH_HOURS = 24
+REFRESH_RATE_HZ  = 1.0
