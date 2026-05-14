@@ -12,7 +12,7 @@ import csv
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from ESL_GroundStation.config import UART_PORT, UART_BAUDRATE, LOG_DIR
+from config import UART_PORT, UART_BAUDRATE, LOG_DIR
 
 # --- Config for this test ---
 TEST_AZ = 120.4  # fixed target to send, change as needed

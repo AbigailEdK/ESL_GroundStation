@@ -11,6 +11,9 @@ TODO:
 '''
 
 # region ABOUT
+'''
+
+'''
 # endregion
 
 
@@ -20,8 +23,8 @@ import sys
 import csv
 import time
 from datetime import datetime, timedelta, timezone
-from ESL_GroundStation.Prototype_Pi_Scripts.tracker import SatelliteTracker
-from ESL_GroundStation.Prototype_Pi_Scripts.uart import UARTComm
+from tracker import SatelliteTracker
+from uart import UARTComm
 # endregion
 
 # region PATHS
@@ -30,7 +33,6 @@ PROJECT_ROOT = os.path.join(HOME_DIR, "Desktop", "ESL_GroundStation")
 # endregion
 
 # region CLASSES
-
 # endregion
 
 # region FUNCTIONS
