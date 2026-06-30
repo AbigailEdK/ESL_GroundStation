@@ -5,8 +5,8 @@ TODO:
         1. External MCS: 
             - Target AZ/EL are received, formatted, and sent to STM32.
         2. Standalone:
-            - Sattelite name/TLE data is sent to Pi and Pi must generate the target angles. 
-            - Automate the TLE upadate via secure channel. 
+            - Satellite name/TLE data is sent to Pi and Pi must generate the target angles. 
+            - Automate the TLE update via secure channel. 
     - Add method that can give the STM32 step/ramp reference inputs for when dish control loops and PID gains are tuned.
 '''
 
@@ -29,7 +29,12 @@ from uart import UARTComm
 
 # region PATHS
 HOME_DIR = os.path.expanduser("~")
-PROJECT_ROOT = os.path.join(HOME_DIR, "Desktop", "ESL_GroundStation")
+# PROJECT_ROOT = os.path.join(HOME_DIR, "Desktop", "ESL_GroundStation") # ! Uncomment for Ubuntu use
+PROJECT_ROOT = os.path.join(HOME_DIR, "iCloudDrive", "Varsity", "Masters", "ESL_GroundStation") # ! Uncomment for Laptop use
+
+PI_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Pi_Scripts_New")
+PROTOTYPE_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Prototype_Pi_Scripts")
+BROWSER_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Browser_Scripts")
 # endregion
 
 # region CLASSES

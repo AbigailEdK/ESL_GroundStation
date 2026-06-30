@@ -4,7 +4,7 @@ iso8601==2.1.0
 jplephem==2.24
 numpy==2.4.4
 PyYAML==6.0.3
-RPi.GPIO==0.7.1
+RPi.GPIO==0.7.1; sys_platform == "linux" and (platform_machine == "armv6l" or platform_machine == "armv7l" or platform_machine == "aarch64" or platform_machine == "arm64")
 serial==0.0.97
 sgp4==2.25
 skyfield==1.54
