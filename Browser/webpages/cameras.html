@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Feeds</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: Arial, sans-serif; 
+            background: #1a1a1a; 
+            color: #fff; 
+        }
+        nav { 
+            background: #333; 
+            padding: 0; 
+            display: flex;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        nav a { 
+            color: white; 
+            padding: 15px 20px; 
+            display: inline-block; 
+            text-decoration: none;
+            transition: background 0.3s;
+        }
+        nav a:hover { 
+            background: #555; 
+        }
+        .content { 
+            padding: 20px; 
+            max-width: 1400px; 
+            margin: 0 auto;
+        }
+        h1 { 
+            margin-bottom: 20px; 
+            text-align: center;
+        }
+        .camera-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); 
+            gap: 20px; 
+            margin-bottom: 20px;
+        }
+        .camera-card { 
+            background: #2a2a2a; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        .camera-header { 
+            background: #444; 
+            padding: 12px; 
+            font-weight: bold; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .camera-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .camera-status.online {
+            background: #4CAF50;
+        }
+        .camera-status.offline {
+            background: #f44336;
+        }
+        .camera-stream { 
+            width: 100%; 
+            aspect-ratio: 16 / 9;
+            background: #000; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .camera-stream img, 
+        .camera-stream video { 
+            width: 100%; 
+            height: 100%;
+            object-fit: contain;
+        }
+        .stream-placeholder {
+            text-align: center;
+            color: #888;
+        }
+        .camera-controls { 
+            padding: 12px; 
+            background: #333; 
+            display: flex; 
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 8px 15px; 
+            border-radius: 4px; 
+            cursor: pointer;
+            transition: background 0.3s;
+            font-size: 12px;
+        }
+        button:hover { 
+            background: #0056b3; 
+        }
+        button.record {
+            background: #f44336;
+        }
+        button.record:hover {
+            background: #da190b;
+        }
+        button.recording {
+            background: #ff9800;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        button.disabled {
+            background: #999;
+            cursor: not-allowed;
+        }
+        .recordings-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .recordings-table th, .recordings-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        .recordings-table th {
+            background: #444;
+            font-weight: bold;
+        }
+        .recordings-table tr:hover {
+            background: #333;
+        }
+        .recording-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .recording-actions button {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+        .camera-info { 
+            padding: 12px; 
+            background: #222; 
+            font-size: 12px; 
+            color: #aaa;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }
+        .setup-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            padding: 8px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            width: 100%;
+            max-width: 400px;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/tracking">Tracking</a>
+        <a href="/cameras">Cameras</a>
+        <a href="/gallery">Gallery</a>
+        <a href="/settings">Settings</a>
+        <a href="/logs">Logs</a>
+    </nav>
+
+    <div class="content">
+        <h1>📹 Camera Feeds</h1>
+        
+        <div class="camera-grid" id="camera-grid">
+            <!-- Cameras will be loaded here -->
+        </div>
+
+        <div class="setup-section">
+            <h2>📼 Recordings</h2>
+            <div id="recordings-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+                <p style="color: #888;">Loading recordings...</p>
+            </div>
+        </div>
+
+        <div class="setup-section">
+            <h2>➕ Add New Camera</h2>
+            <div class="form-group">
+                <label>Camera Name</label>
+                <input type="text" id="camera-name" placeholder="e.g., Antenna Camera">
+            </div>
+            <div class="form-group">
+                <label>Stream URL or IP Address</label>
+                <input type="text" id="camera-url" placeholder="http://192.168.1.100:8080/video or rtsp://...">
+            </div>
+            <div class="form-group">
+                <label>Camera Type</label>
+                <select id="camera-type">
+                    <option value="mjpeg">MJPEG Stream (HTTP)</option>
+                    <option value="rtsp">RTSP Stream</option>
+                    <option value="snapshot">Snapshot (Polling)</option>
+                    <option value="hls">HLS Stream</option>
+                </select>
+            </div>
+            <button onclick="addCamera()">Add Camera</button>
+        </div>
+    </div>
+
+    <script>
+        // Sample camera data (replace with actual cameras on your network)
+        let cameras = JSON.parse(localStorage.getItem('cameras')) || [
+            {
+                id: 1,
+                name: 'Antenna Camera',
+                url: 'http://192.168.1.100:8080/video',
+                type: 'mjpeg',
+                status: 'online'
+            },
+            {
+                id: 2,
+                name: 'Dish Camera',
+                url: 'http://192.168.1.101:8080/video',
+                type: 'mjpeg',
+                status: 'offline'
+            },
+            {
+                id: 3,
+                name: 'Ground Camera',
+                url: 'http://192.168.1.102:8080/snapshot',
+                type: 'snapshot',
+                status: 'online'
+            }
+        ];
+
+        function renderCameras() {
+            const grid = document.getElementById('camera-grid');
+            grid.innerHTML = cameras.map(cam => `
+                <div class="camera-card">
+                    <div class="camera-header">
+                        <span>
+                            <span class="camera-status ${cam.status}"></span>
+                            ${cam.name}
+                        </span>
+                        <button onclick="deleteCamera(${cam.id})" style="background: #f44336; padding: 4px 8px;">✕</button>
+                    </div>
+                    <div class="camera-stream" id="stream-${cam.id}">
+                        ${renderStream(cam)}
+                    </div>
+                    <div class="camera-controls">
+                        <button id="record-btn-${cam.id}" class="record" onclick="toggleRecord(${cam.id})">🔴 Record</button>
+                        <button onclick="takeSnapshot(${cam.id})">📸 Snapshot</button>
+                        <button onclick="refreshStream(${cam.id})">🔄 Refresh</button>
+                    </div>
+                    <div class="camera-info">
+                        <div class="info-item">
+                            <span>Type:</span>
+                            <span>${cam.type.toUpperCase()}</span>
+                        </div>
+                        <div class="info-item">
+                            <span>URL:</span>
+                            <span style="word-break: break-all; font-family: monospace;">${cam.url}</span>
+                        </div>
+                        <div class="info-item">
+                            <span>Status:</span>
+                            <span id="record-status-${cam.id}">Ready</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Update recording button states
+            updateRecordingStatus();
+        }
+
+        function renderStream(cam) {
+            switch(cam.type) {
+                case 'mjpeg':
+                    return `<img src="${cam.url}" onerror="this.parentElement.innerHTML='<div class=stream-placeholder>Unable to connect to camera</div>'" onload="this.parentElement.parentElement.querySelector('.camera-header').classList.remove('offline')">`;
+                case 'snapshot':
+                    return `<img src="${cam.url}?t=${Date.now()}" onerror="this.parentElement.innerHTML='<div class=stream-placeholder>Unable to connect to camera</div>'">`;
+                case 'rtsp':
+                    return `<div class="stream-placeholder">RTSP streams require a transcoding service<br>Configure in settings</div>`;
+                case 'hls':
+                    return `<video controls><source src="${cam.url}" type="application/x-mpegURL"></video>`;
+                default:
+                    return `<div class="stream-placeholder">Unknown stream type</div>`;
+            }
+        }
+
+        function addCamera() {
+            const name = document.getElementById('camera-name').value;
+            const url = document.getElementById('camera-url').value;
+            const type = document.getElementById('camera-type').value;
+
+            if (!name || !url) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            const newCam = {
+                id: Date.now(),
+                name: name,
+                url: url,
+                type: type,
+                status: 'checking'
+            };
+
+            cameras.push(newCam);
+            saveCameras();
+            renderCameras();
+
+            // Clear form
+            document.getElementById('camera-name').value = '';
+            document.getElementById('camera-url').value = '';
+        }
+
+        function deleteCamera(id) {
+            if (confirm('Delete this camera?')) {
+                cameras = cameras.filter(cam => cam.id !== id);
+                saveCameras();
+                renderCameras();
+            }
+        }
+
+        function toggleRecord(id) {
+            const cam = cameras.find(c => c.id === id);
+            const btn = document.getElementById(`record-btn-${id}`);
+            const statusSpan = document.getElementById(`record-status-${id}`);
+            
+            if (btn.classList.contains('recording')) {
+                // Stop recording
+                stopRecording(id, btn, statusSpan);
+            } else {
+                // Start recording
+                startRecording(id, cam, btn, statusSpan);
+            }
+        }
+
+        async function startRecording(id, cam, btn, statusSpan) {
+            try {
+                const response = await fetch('/api/start-recording', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: id,
+                        name: cam.name,
+                        url: cam.url,
+                        type: cam.type
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    btn.classList.add('recording');
+                    btn.textContent = '⏹️ Stop Recording';
+                    statusSpan.textContent = 'Recording...';
+                    statusSpan.style.color = '#ff9800';
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Failed to start recording: ' + error);
+            }
+        }
+
+        async function stopRecording(id, btn, statusSpan) {
+            try {
+                const response = await fetch('/api/stop-recording', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    btn.classList.remove('recording');
+                    btn.textContent = '🔴 Record';
+                    statusSpan.textContent = 'Stopped';
+                    statusSpan.style.color = '#4CAF50';
+                    
+                    // Reload recordings list
+                    loadRecordings();
+                    
+                    // Reset status after 2 seconds
+                    setTimeout(() => {
+                        statusSpan.textContent = 'Ready';
+                        statusSpan.style.color = '#aaa';
+                    }, 2000);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Failed to stop recording: ' + error);
+            }
+        }
+
+        async function updateRecordingStatus() {
+            try {
+                const response = await fetch('/api/recording-status');
+                const status = await response.json();
+                
+                cameras.forEach(cam => {
+                    const btn = document.getElementById(`record-btn-${cam.id}`);
+                    const statusSpan = document.getElementById(`record-status-${cam.id}`);
+                    
+                    if (btn && status[cam.id] && status[cam.id].recording) {
+                        btn.classList.add('recording');
+                        btn.textContent = '⏹️ Stop Recording';
+                        statusSpan.textContent = 'Recording...';
+                        statusSpan.style.color = '#ff9800';
+                    }
+                });
+            } catch (error) {
+                console.log('Error checking recording status:', error);
+            }
+        }
+
+        async function loadRecordings() {
+            try {
+                const response = await fetch('/api/recordings');
+                const recordings = await response.json();
+                const container = document.getElementById('recordings-list');
+                
+                if (recordings.length === 0) {
+                    container.innerHTML = '<p style="color: #888;">No recordings yet</p>';
+                    return;
+                }
+                
+                const html = `
+                    <table class="recordings-table">
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Size</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${recordings.map(rec => `
+                                <tr>
+                                    <td>${rec.filename}</td>
+                                    <td>${rec.size_mb} MB</td>
+                                    <td>${new Date(rec.created).toLocaleString()}</td>
+                                    <td>
+                                        <div class="recording-actions">
+                                            <button onclick="downloadRecording('${rec.filename}')">⬇️ Download</button>
+                                            <button style="background: #f44336;" onclick="deleteRecording('${rec.filename}')">🗑️ Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading recordings:', error);
+            }
+        }
+
+        async function downloadRecording(filename) {
+            window.location.href = `/api/download-recording/${encodeURIComponent(filename)}`;
+        }
+
+        async function deleteRecording(filename) {
+            if (!confirm('Delete this recording?')) return;
+            
+            try {
+                const response = await fetch('/api/delete-recording', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: filename })
+                });
+                
+                if (response.ok) {
+                    loadRecordings();
+                } else {
+                    alert('Failed to delete recording');
+                }
+            } catch (error) {
+                alert('Error: ' + error);
+            }
+        }
+
+        async function takeSnapshot(id) {
+            const cam = cameras.find(c => c.id === id);
+            if (!cam) return;
+            
+            try {
+                const response = await fetch('/api/save-snapshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: id,
+                        name: cam.name,
+                        url: cam.url,
+                        type: cam.type
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(`✓ Snapshot saved: ${data.filename}`);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Failed to save snapshot: ' + error);
+            }
+        }
+
+        function refreshStream(id) {
+            renderCameras();
+        }
+
+        function saveCameras() {
+            localStorage.setItem('cameras', JSON.stringify(cameras));
+        }
+
+        // Initial render
+        renderCameras();
+        loadRecordings();
+
+        // Auto-refresh streams every 5 seconds for snapshot cameras
+        setInterval(() => {
+            cameras.forEach(cam => {
+                if (cam.type === 'snapshot') {
+                    const streamDiv = document.getElementById(`stream-${cam.id}`);
+                    if (streamDiv) {
+                        const img = streamDiv.querySelector('img');
+                        if (img) {
+                            img.src = `${cam.url}?t=${Date.now()}`;
+                        }
+                    }
+                }
+            });
+        }, 5000);
+
+        // Refresh recordings list every 10 seconds
+        setInterval(loadRecordings, 10000);
+    </script>
+</body>
+</html>

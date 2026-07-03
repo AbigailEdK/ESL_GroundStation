@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Logs</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #1a1a1a; color: #fff; }
+        nav { background: #333; padding: 0; display: flex; position: sticky; top: 0; z-index: 100; }
+        nav a { color: white; padding: 15px 20px; display: inline-block; text-decoration: none; transition: background 0.3s; }
+        nav a:hover { background: #555; }
+        .content { padding: 20px; max-width: 1200px; margin: 0 auto; }
+        h1 { margin-bottom: 20px; text-align: center; }
+        .log-section { background: #2a2a2a; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3); margin-bottom: 20px; }
+        h2 { margin-bottom: 15px; color: #00d4ff; }
+        .log-box { 
+            background: #1a1a1a; 
+            padding: 15px; 
+            border-radius: 4px; 
+            font-family: 'Courier New', monospace;
+            max-height: 500px; 
+            overflow-y: auto;
+            border-left: 3px solid #00d4ff;
+            line-height: 1.6;
+        }
+        .log-box p { 
+            margin: 5px 0; 
+            color: #0f0;
+            font-size: 12px;
+        }
+        .log-box .error { color: #ff4444; }
+        .log-box .warning { color: #ffaa00; }
+        .log-box .info { color: #00d4ff; }
+        .controls { 
+            display: flex; 
+            gap: 10px; 
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        button { 
+            background: #00d4ff; 
+            color: #1a1a1a; 
+            padding: 8px 15px; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        button:hover { 
+            background: #00b0cc;
+        }
+        button.secondary {
+            background: #444;
+            color: #fff;
+        }
+        button.secondary:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/tracking">Tracking</a>
+        <a href="/cameras">Cameras</a>
+        <a href="/gallery">Gallery</a>
+        <a href="/settings">Settings</a>
+        <a href="/logs">Logs</a>
+    </nav>
+
+    <div class="content">
+        <h1>📋 System Logs</h1>
+        
+        <div class="log-section">
+            <h2>System Logs</h2>
+            <div class="controls">
+                <button class="secondary" onclick="clearLogs()">Clear Logs</button>
+                <button class="secondary" onclick="downloadLogs()">Download Logs</button>
+            </div>
+            <div class="log-box" id="system-logs">
+                <p class="info">[2026-03-20 10:30:15] System started</p>
+                <p class="info">[2026-03-20 10:30:20] Dashboard loaded</p>
+                <p>[2026-03-20 10:30:25] Metrics updated</p>
+                <p class="info">[2026-03-20 10:30:30] Satellite tracking initialized</p>
+                <p>[2026-03-20 10:30:35] Receiver online</p>
+            </div>
+        </div>
+
+        <div class="log-section">
+            <h2>Recording Logs</h2>
+            <div class="log-box" id="recording-logs">
+                <p>[2026-03-20 10:35:00] Recording started - Antenna Camera</p>
+                <p>[2026-03-20 10:37:45] Recording stopped - Antenna Camera</p>
+                <p class="info">[2026-03-20 10:38:12] File saved: antenna_camera_20260320_103500.mp4 (342 MB)</p>
+            </div>
+        </div>
+
+        <div class="log-section">
+            <h2>Error Logs</h2>
+            <div class="log-box" id="error-logs">
+                <p class="warning">[2026-03-20 09:45:20] Warning: High CPU usage (85%)</p>
+                <p class="warning">[2026-03-20 09:50:15] Warning: Disk space low (15% remaining)</p>
+                <p class="info">[2026-03-20 10:20:00] All systems normal</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function clearLogs() {
+            if (confirm('Clear all logs? This cannot be undone.')) {
+                document.getElementById('system-logs').innerHTML = '<p class="info">[' + new Date().toLocaleString() + '] Logs cleared</p>';
+                alert('Logs cleared');
+            }
+        }
+
+        function downloadLogs() {
+            const logs = document.getElementById('system-logs').innerText;
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(logs));
+            element.setAttribute('download', 'system_logs_' + new Date().getTime() + '.txt');
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+    </script>
+</body>
+</html>

@@ -8,3 +8,8 @@ RPi.GPIO==0.7.1; sys_platform == "linux" and (platform_machine == "armv6l" or pl
 serial==0.0.97
 sgp4==2.25
 skyfield==1.54
+Flask==2.3.0
+psutil==5.9.5
+Werkzeug==2.3.0
+requests==2.31.0
+Pillow>=11.0.0

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Settings</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #1a1a1a; color: #fff; }
+        nav { background: #333; padding: 0; display: flex; position: sticky; top: 0; z-index: 100; }
+        nav a { color: white; padding: 15px 20px; display: inline-block; text-decoration: none; transition: background 0.3s; }
+        nav a:hover { background: #555; }
+        .content { padding: 20px; max-width: 600px; margin: 0 auto; }
+        h1 { margin-bottom: 20px; text-align: center; }
+        .form-group { margin: 20px 0; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #fff; }
+        input, select { 
+            padding: 10px; 
+            width: 100%; 
+            background: #2a2a2a; 
+            color: #fff; 
+            border: 1px solid #444; 
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        input:focus, select:focus { 
+            outline: none; 
+            border-color: #00d4ff;
+            box-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+        }
+        button { 
+            background: #00d4ff; 
+            color: #1a1a1a; 
+            padding: 12px 30px; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+            width: 100%;
+            font-size: 16px;
+        }
+        button:hover { 
+            background: #00b0cc;
+        }
+        .settings-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .settings-section h2 {
+            margin-bottom: 15px;
+            color: #00d4ff;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/">Dashboard</a>
+        <a href="/tracking">Tracking</a>
+        <a href="/cameras">Cameras</a>
+        <a href="/gallery">Gallery</a>
+        <a href="/settings">Settings</a>
+        <a href="/logs">Logs</a>
+    </nav>
+
+    <div class="content">
+        <h1>⚙️ Settings</h1>
+        
+        <div class="settings-section">
+            <h2>General Settings</h2>
+            <form>
+                <div class="form-group">
+                    <label>Update Interval (seconds)</label>
+                    <input type="number" value="2" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Theme</label>
+                    <select>
+                        <option>Dark (Current)</option>
+                        <option>Light</option>
+                    </select>
+                </div>
+                <button type="submit">Save Settings</button>
+            </form>
+        </div>
+
+        <div class="settings-section">
+            <h2>Receiver Configuration</h2>
+            <form>
+                <div class="form-group">
+                    <label>Frequency (MHz)</label>
+                    <input type="number" value="145.800" step="0.001">
+                </div>
+                <div class="form-group">
+                    <label>Modulation</label>
+                    <select>
+                        <option>FM</option>
+                        <option>AM</option>
+                        <option>SSB</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Bandwidth (kHz)</label>
+                    <input type="number" value="25" min="1">
+                </div>
+                <button type="submit">Save Receiver Config</button>
+            </form>
+        </div>
+
+        <div class="settings-section">
+            <h2>Transmitter Configuration</h2>
+            <form>
+                <div class="form-group">
+                    <label>Frequency (MHz)</label>
+                    <input type="number" value="145.200" step="0.001">
+                </div>
+                <div class="form-group">
+                    <label>Power Output (Watts)</label>
+                    <input type="number" value="10" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select>
+                        <option>Standby</option>
+                        <option>Active</option>
+                    </select>
+                </div>
+                <button type="submit">Save Transmitter Config</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Save settings to localStorage
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                alert('Settings saved!');
+            });
+        });
+    </script>
+</body>
+</html>
