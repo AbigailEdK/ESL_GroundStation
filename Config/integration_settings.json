@@ -1,0 +1,24 @@
+{
+    "controller": {
+        "auto_connect_uart": false,
+        "uart_port": "/dev/serial0",
+        "uart_baudrate": 115200,
+        "uart_timeout": 0.5,
+        "refresh_rate_hz": 1.0,
+        "feedback_enabled": true
+    },
+    "telemetry": {
+        "signal_strength_dbm": -85.0,
+        "snr_db": 12.0,
+        "frequency_mhz": 145.8,
+        "tx_frequency_mhz": 145.2,
+        "data_rate_bps": 9600,
+        "gps_latitude": -33.9279,
+        "gps_longitude": 18.8653,
+        "gps_altitude_m": 121.0
+    },
+    "storage": {
+        "recordings_dir": "~/GSWebUI/recordings",
+        "snapshots_dir": "~/GSWebUI/snapshots"
+    }
+}

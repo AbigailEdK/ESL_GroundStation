@@ -1,5 +1,4 @@
 import serial
-import time
 
 class UARTComm:
     def __init__(self, port="/dev/serial0", baudrate=115200, timeout=1):
@@ -32,6 +31,18 @@ class UARTComm:
         
         self.ser.write(message.encode())
         print(f"UART TX: {message.strip()}")
+
+    def read_line(self):
+        """Read a single UART line, returning None on timeout/no data."""
+        raw = self.ser.readline()
+        if not raw:
+            return None
+        text = raw.decode(errors='ignore').strip()
+        return text or None
+
+    def clear_input_buffer(self):
+        """Clear pending UART RX bytes to start from fresh state."""
+        self.ser.reset_input_buffer()
     
     def close(self):
         """Close UART connection"""
