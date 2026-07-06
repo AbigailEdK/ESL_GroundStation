@@ -66,7 +66,7 @@ def _load_integration_settings():
 class WebManagerApp:
     def __init__(self):
         self.app = Flask(__name__)
-        self.app.template_folder = os.path.join(os.path.dirname(__file__), 'templates')
+        self.app.template_folder = os.path.join(os.path.dirname(__file__), 'webpages')
         self.app.static_folder = os.path.join(os.path.dirname(__file__), 'static')
 
         self.settings = _load_integration_settings()
