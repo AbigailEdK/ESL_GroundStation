@@ -17,18 +17,12 @@ TODO:
 # endregion
 # region IMPORTS
 import os
-import sys
-import csv
 import time
-import subprocess
-import atexit
-import signal
-from datetime import datetime, timedelta, timezone
-from tracker import SatelliteTracker
-from uart import UARTComm
-from utils import startBrowser, stopBrowser, handle_exit_signal, startUART, stopUART, startTracker, stopTracker, csvLogSetup
-import serial
 import threading
+import json
+from urllib import request, error
+
+from utils import startBrowser
 
 # endregion
 
@@ -48,31 +42,37 @@ MAIN_LOOP_SLEEP_SECONDS = 1.0
 # endregion
 
 # region VARIABLES
-from config import UART_PORT, UART_BAUDRATE, LOG_DIR
+API_BASE_URL = 'http://127.0.0.1:5000'
 # endregion
+
+
+def _api_post(path, payload=None, timeout=2.0):
+    data = json.dumps(payload or {}).encode('utf-8')
+    req = request.Request(
+        f"{API_BASE_URL}{path}",
+        data=data,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    with request.urlopen(req, timeout=timeout) as response:
+        body = response.read().decode('utf-8')
+        return json.loads(body) if body else {}
+
+
+def _api_get(path, timeout=2.0):
+    req = request.Request(f"{API_BASE_URL}{path}", method='GET')
+    with request.urlopen(req, timeout=timeout) as response:
+        body = response.read().decode('utf-8')
+        return json.loads(body) if body else {}
 
 # region MAIN
 def main():
     global browser_process
-    global uart_comm
-    global satellite_tracker
-
-    latest = {}
-    lock = threading.Lock()
-    log_file, log_writer = csvLogSetup(LOG_DIR)
 
     browser_process = None
-    uart_comm = None
-    satellite_tracker = None
 
     # | Start web browser
     browser_process = startBrowser(background=True)
-
-    # | Start UART and reception loop 
-    uart_comm = startUART(latest=latest, lock=lock, log_writer=log_writer, log_file=log_file, port=UART_PORT, baudrate=UART_BAUDRATE, timeout=1)
-
-    # | Start satellite tracker
-    satellite_tracker = startTracker(lat=-33.918861, lon=18.4233, elevation_m=0)  # Example coordinates; replace with actual
 
     print("Starting Ground Station Prototype...")
     try:
@@ -90,15 +90,31 @@ def main():
             # > ------------------
             # > EXTERNAL MCS MODE
             # > ------------------
-            # - AZ/EL TARGETS RECEIVED
-
+            state = {}
+            try:
+                state = _api_get('/api/control/state')
+            except error.URLError:
+                pass
+            except Exception:
+                pass
 
             # - FORMATTING
 
 
-            # - SENDING TO STM32
-            uart_comm.send_position(azimuth=az, elevation=el)  # Example values; replace with actual received targets
+            # Print latest received telemetry 
+            ts = time.strftime('%H:%M:%S')
+            target_az = state.get('target_azimuth')
+            target_el = state.get('target_elevation')
+            actual_az = state.get('actual_azimuth')
+            actual_el = state.get('actual_elevation')
 
+            if None not in (target_az, target_el, actual_az, actual_el):
+                az_e = actual_az - target_az
+                el_e = actual_el - target_el
+                print(f"{ts:10} | {target_az:>8.1f} {actual_az:>8.1f} {az_e:>+8.1f} | "
+                    f"{target_el:>8.1f} {actual_el:>8.1f} {el_e:>+8.1f}")
+            else:
+                print(f"{ts:10} | waiting for STM32...")
 
 
             # > ------------------
@@ -128,10 +144,16 @@ def main():
     except KeyboardInterrupt:
         print("Shutting down Ground Station Prototype...")
     finally:
-        atexit.register(stopBrowser)
-        signal.signal(signal.SIGINT, handle_exit_signal)
-        if hasattr(signal, "SIGTERM"):
-            signal.signal(signal.SIGTERM, handle_exit_signal)
+        try:
+            _api_post('/api/control/disconnect-uart')
+        except Exception:
+            pass
+        if browser_process is not None and browser_process.poll() is None:
+            browser_process.terminate()
+            try:
+                browser_process.wait(timeout=5)
+            except Exception:
+                browser_process.kill()
 
 if __name__ == "__main__": threading.Thread(target=main, daemon=True).start()
 # endregion

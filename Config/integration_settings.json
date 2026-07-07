@@ -1,6 +1,6 @@
 {
     "controller": {
-        "auto_connect_uart": false,
+        "auto_connect_uart": true,
         "uart_port": "/dev/serial0",
         "uart_baudrate": 115200,
         "uart_timeout": 0.5,

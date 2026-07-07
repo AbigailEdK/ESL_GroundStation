@@ -13,9 +13,16 @@ import subprocess
 import atexit
 import signal
 from datetime import datetime, timedelta, timezone
-from tracker import SatelliteTracker
-from uart import UARTComm
 import threading
+
+try:
+    from .tracker import SatelliteTracker
+    from .uart import UARTComm
+    from .config import UART_PORT, UART_BAUDRATE, LOG_DIR
+except ImportError:
+    from tracker import SatelliteTracker
+    from uart import UARTComm
+    from config import UART_PORT, UART_BAUDRATE, LOG_DIR
 
 # endregion
 
@@ -32,7 +39,9 @@ MAIN_LOOP_SLEEP_SECONDS = 1.0
 # endregion
 
 # region VARIABLES
-from config import UART_PORT, UART_BAUDRATE, LOG_DIR
+browser_process = None
+uart_comm = None
+satellite_tracker = None
 # endregion
 
 def startBrowser(background=True):
@@ -59,22 +68,72 @@ def stopBrowser():
         browser_process.kill()
         browser_process.wait()
 
-def startUART(latest, lock, log_writer, log_file, port=UART_PORT, baudrate=UART_BAUDRATE, timeout=1):
+def startUART(
+    latest=None,
+    lock=None,
+    log_writer=None,
+    log_file=None,
+    port=UART_PORT,
+    baudrate=UART_BAUDRATE,
+    timeout=1,
+    start_rx=False,
+    rx_target=None,
+    rx_thread_name='uart-rx',
+):
     global uart_comm
     if uart_comm is None:
-        uart_comm = UARTComm(port=port, baudrate=baudrate, timeout=timeout)
+        try:
+            uart_comm = UARTComm(port, baudrate, timeout)
+        except Exception as e:
+            print(f"Failed to open UART: {e}")
+            uart_comm = None
+            return None
 
-        uart_comm.rx_thread = threading.Thread(
-            target=uart_comm.rx_loop,
-            args=(latest, lock, log_writer, log_file),
-            daemon=True,
-        )
-        uart_comm.rx_thread.start()
+    default_rx_requested = all(arg is not None for arg in (latest, lock, log_writer, log_file))
+
+    if start_rx and rx_target is not None:
+        uart_comm.start_rx_loop(rx_target, thread_name=rx_thread_name)
+    elif default_rx_requested:
+        def _default_line_handler(line):
+            if not line.startswith('$TLM,'):
+                return
+
+            parts = line[5:].split(',')
+            if len(parts) < 4:
+                return
+
+            data = {
+                'az_actual': float(parts[0]),
+                'az_target': float(parts[1]),
+                'el_actual': float(parts[2]),
+                'el_target': float(parts[3]),
+            }
+
+            with lock:
+                latest.update(data)
+
+            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+            log_writer.writerow([
+                ts,
+                data['az_actual'],
+                data['az_target'],
+                data['el_actual'],
+                data['el_target'],
+            ])
+            log_file.flush()
+
+        uart_comm.start_rx_loop(_default_line_handler, thread_name=rx_thread_name)
 
     return uart_comm
 
-def stopUART():
+def stopUART(uart_instance=None):
     global uart_comm
+    if uart_instance is not None:
+        uart_instance.close()
+        if uart_comm is uart_instance:
+            uart_comm = None
+        return
+
     if uart_comm is not None:
         uart_comm.close()
         uart_comm = None

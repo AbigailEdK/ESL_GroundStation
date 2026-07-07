@@ -4,8 +4,7 @@ from datetime import datetime, timezone
 import re
 
 from . import config
-from .tracker import SatelliteTracker
-from .uart import UARTComm
+from .utils import startTracker, startUART, stopUART
 
 
 class GroundStationController:
@@ -14,8 +13,6 @@ class GroundStationController:
         self._lock = threading.Lock()
         self._tracking_thread = None
         self._tracking_running = False
-        self._rx_thread = None
-        self._rx_running = False
         self._refresh_rate_hz = float(
             self.settings.get('refresh_rate_hz', config.REFRESH_RATE_HZ)
         )
@@ -27,7 +24,7 @@ class GroundStationController:
         self._uart_timeout = float(self.settings.get('uart_timeout', 0.5))
         self._feedback_enabled = bool(self.settings.get('feedback_enabled', True))
 
-        self.tracker = SatelliteTracker(
+        self.tracker = startTracker(
             config.LATITUDE,
             config.LONGITUDE,
             config.ELEVATION_M,
@@ -63,15 +60,21 @@ class GroundStationController:
                 self.state['uart_connected'] = True
                 return True, 'UART already connected'
             try:
-                self.uart = UARTComm(
+                self.uart = startUART(
                     port=self._uart_port,
                     baudrate=self._uart_baudrate,
                     timeout=self._uart_timeout,
                 )
+                if self.uart is None:
+                    raise RuntimeError('Failed to initialize UART')
                 self.uart.clear_input_buffer()
+                if self._feedback_enabled:
+                    self.uart.start_rx_loop(
+                        self._handle_feedback_line,
+                        thread_name='uart-feedback-rx',
+                    )
                 self.state['uart_connected'] = True
                 self.state['last_error'] = None
-                self._start_rx_loop_if_needed()
                 return True, 'UART connected'
             except Exception as exc:
                 self.uart = None
@@ -81,31 +84,14 @@ class GroundStationController:
 
     def disconnect_uart(self):
         with self._lock:
-            self._stop_rx_loop()
             if self.uart is not None:
                 try:
-                    self.uart.close()
+                    stopUART(self.uart)
                 except Exception as exc:
                     self.state['last_error'] = str(exc)
                 self.uart = None
             self.state['uart_connected'] = False
             return True, 'UART disconnected'
-
-    def _start_rx_loop_if_needed(self):
-        if not self._feedback_enabled:
-            return
-        if self._rx_running:
-            return
-        self._rx_running = True
-        self._rx_thread = threading.Thread(
-            target=self._rx_loop,
-            name='uart-feedback-rx',
-            daemon=True,
-        )
-        self._rx_thread.start()
-
-    def _stop_rx_loop(self):
-        self._rx_running = False
 
     @staticmethod
     def _parse_feedback_line(line):
@@ -140,34 +126,19 @@ class GroundStationController:
 
         return payload
 
-    def _rx_loop(self):
-        while self._rx_running:
-            try:
-                uart = self.uart
-                if uart is None:
-                    time.sleep(0.1)
-                    continue
+    def _handle_feedback_line(self, line):
+        parsed = self._parse_feedback_line(line)
+        now_iso = datetime.now(timezone.utc).isoformat()
 
-                line = uart.read_line()
-                if line is None:
-                    continue
-
-                parsed = self._parse_feedback_line(line)
-                now_iso = datetime.now(timezone.utc).isoformat()
-
-                with self._lock:
-                    self.state['last_rx_utc'] = now_iso
-                    self.state['last_rx_raw'] = line
-                    if parsed:
-                        self.state.update(parsed)
-                        if self.state.get('fault_state'):
-                            self.state['last_error'] = self.state['fault_state']
-                        else:
-                            self.state['last_error'] = None
-            except Exception as exc:
-                with self._lock:
-                    self.state['last_error'] = str(exc)
-                time.sleep(0.2)
+        with self._lock:
+            self.state['last_rx_utc'] = now_iso
+            self.state['last_rx_raw'] = line
+            if parsed:
+                self.state.update(parsed)
+                if self.state.get('fault_state'):
+                    self.state['last_error'] = self.state['fault_state']
+                else:
+                    self.state['last_error'] = None
 
     def load_tle(self, name, line1, line2):
         ok = self.tracker.load_tle_from_csv_data(name, line1, line2)
