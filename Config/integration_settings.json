@@ -19,6 +19,21 @@
     },
     "storage": {
         "recordings_dir": "~/GSWebUI/recordings",
-        "snapshots_dir": "~/GSWebUI/snapshots"
+        "snapshots_dir": "~/GSWebUI/snapshots",
+        "tle_library_path": "~/GSWebUI/saved_satellites.json"
+    },
+    "standalone": {
+        "enabled": false,
+        "name": "",
+        "line1": "",
+        "line2": "",
+        "refresh_rate_hz": 1.0
+    },
+    "mode_switch": {
+        "enabled": true,
+        "pin": 17,
+        "pull_up": true,
+        "standalone_when_low": true,
+        "default_mode": "mcs"
     }
 }

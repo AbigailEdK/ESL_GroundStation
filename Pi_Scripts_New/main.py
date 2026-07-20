@@ -18,11 +18,18 @@ TODO:
 # region IMPORTS
 import os
 import time
-import threading
 import json
 from urllib import request, error
 
-from utils import startBrowser
+try:
+    import RPi.GPIO as GPIO  # type: ignore[import-not-found]
+except Exception:
+    GPIO = None
+
+try:
+    from .utils import startBrowser
+except ImportError:
+    from utils import startBrowser
 
 # endregion
 
@@ -35,6 +42,7 @@ PI_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Pi_Scripts_New")
 PROTOTYPE_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Prototype_Pi_Scripts")
 BROWSER_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Browser")
 WEB_MANAGER_PATH = os.path.join(BROWSER_SCRIPTS_DIR, "webManager.py")
+INTEGRATION_SETTINGS_PATH = os.path.join(PROJECT_ROOT, 'Config', 'integration_settings.json')
 # endregion
 
 # region CLASSES
@@ -44,6 +52,20 @@ WEB_MANAGER_PATH = os.path.join(BROWSER_SCRIPTS_DIR, "webManager.py")
 MAIN_LOOP_SLEEP_SECONDS = 1.0
 API_BASE_URL = 'http://127.0.0.1:5000'
 # endregion
+
+
+def _load_integration_settings():
+    #  % ------------------------------------------------------------
+    #  % Inputs: None directly; reads Config/integration_settings.json and falls back to empty settings.
+    #  % Side-effects: Loads runtime configuration used to initialize controller and optional standalone mode.
+    #  % Returns: Settings dictionary parsed from disk, or empty dict when unavailable/invalid.
+    #  % ------------------------------------------------------------
+    try:
+        with open(INTEGRATION_SETTINGS_PATH, 'r', encoding='utf-8') as file:
+            loaded = json.load(file)
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
 
 
 def _api_post(path, payload=None, timeout=2.0):
@@ -75,54 +97,221 @@ def _api_get(path, timeout=2.0):
         body = response.read().decode('utf-8')
         return json.loads(body) if body else {}
 
+
+def _read_standalone_config(settings):
+    #  % ------------------------------------------------------------
+    #  % Inputs: settings dictionary loaded from integration settings file.
+    #  % Side-effects: Normalizes standalone mode values (enabled/name/line1/line2/refresh rate).
+    #  % Returns: Sanitized standalone configuration dictionary used by main loop.
+    #  % ------------------------------------------------------------
+    standalone = settings.get('standalone', {})
+    if not isinstance(standalone, dict):
+        standalone = {}
+
+    refresh_rate_hz = standalone.get('refresh_rate_hz')
+    try:
+        refresh_rate_hz = float(refresh_rate_hz) if refresh_rate_hz is not None else None
+    except (TypeError, ValueError):
+        refresh_rate_hz = None
+
+    return {
+        'enabled': bool(standalone.get('enabled', False)),
+        'name': standalone.get('name') or standalone.get('satellite_name'),
+        'line1': standalone.get('line1') or standalone.get('tle_line1'),
+        'line2': standalone.get('line2') or standalone.get('tle_line2'),
+        'refresh_rate_hz': refresh_rate_hz,
+    }
+
+
+def _read_mode_switch_config(settings):
+    #  % ------------------------------------------------------------
+    #  % Inputs: settings dictionary loaded from integration settings file.
+    #  % Side-effects: Normalizes mode switch pin/polarity defaults for Raspberry Pi GPIO reads.
+    #  % Returns: Sanitized mode switch configuration dictionary.
+    #  % ------------------------------------------------------------
+    switch = settings.get('mode_switch', {})
+    if not isinstance(switch, dict):
+        switch = {}
+
+    pin = switch.get('pin', 17)
+    try:
+        pin = int(pin)
+    except (TypeError, ValueError):
+        pin = 17
+
+    pull_up = bool(switch.get('pull_up', True))
+    standalone_when_low = bool(switch.get('standalone_when_low', True))
+    default_mode = str(switch.get('default_mode', 'mcs')).strip().lower()
+    if default_mode not in ('mcs', 'standalone'):
+        default_mode = 'mcs'
+
+    return {
+        'enabled': bool(switch.get('enabled', True)),
+        'pin': pin,
+        'pull_up': pull_up,
+        'standalone_when_low': standalone_when_low,
+        'default_mode': default_mode,
+    }
+
+
+def _setup_mode_switch(mode_switch_cfg):
+    #  % ------------------------------------------------------------
+    #  % Inputs: Sanitized mode switch configuration values.
+    #  % Side-effects: Initializes optional GPIO input pin and creates mode reader/cleanup callables.
+    #  % Returns: Tuple (read_mode, cleanup_mode_switch, source_label).
+    #  % ------------------------------------------------------------
+    default_mode = mode_switch_cfg['default_mode']
+
+    def _default_reader():
+        return default_mode
+
+    def _noop_cleanup():
+        return None
+
+    if not mode_switch_cfg.get('enabled'):
+        return _default_reader, _noop_cleanup, 'config-default'
+
+    if GPIO is None:
+        return _default_reader, _noop_cleanup, 'gpio-unavailable'
+
+    pin = mode_switch_cfg['pin']
+    pull_up = mode_switch_cfg['pull_up']
+    standalone_when_low = mode_switch_cfg['standalone_when_low']
+
+    GPIO.setmode(GPIO.BCM)
+    pud = GPIO.PUD_UP if pull_up else GPIO.PUD_DOWN
+    GPIO.setup(pin, GPIO.IN, pull_up_down=pud)
+
+    def _gpio_reader():
+        raw = GPIO.input(pin)
+        is_low = (raw == GPIO.LOW)
+        standalone = is_low if standalone_when_low else (not is_low)
+        return 'standalone' if standalone else 'mcs'
+
+    def _gpio_cleanup():
+        try:
+            GPIO.cleanup(pin)
+        except Exception:
+            pass
+
+    return _gpio_reader, _gpio_cleanup, f'gpio-bcm-{pin}'
+
 # region MAIN
 def main():
     #  % ------------------------------------------------------------
-    #  % Inputs: No direct parameters; uses API_BASE_URL, MAIN_LOOP_SLEEP_SECONDS, and Browser subprocess state.
-    #  % Side-effects: Starts/restarts Browser process, polls control state, prints live telemetry rows, and disconnects UART on shutdown.
+    #  % Inputs: No direct parameters; uses MAIN_LOOP_SLEEP_SECONDS and Browser subprocess state.
+    #  % Side-effects: Starts/restarts Browser process, drives GroundStationController UART lifecycle, and prints live telemetry rows.
     #  % Returns: None; runs until interrupted or process termination.
     #  % ------------------------------------------------------------
     global browser_process
 
     browser_process = None
 
-    # | Start web browser
+    # * Load JSON file
+    # | Contains standalone mode and mode switch GPIO configuration (in Config folder).
+    settings = _load_integration_settings() 
+
+    # * Setup mode switch GPIO reader and cleanup callables
+    # | Get standalone configuration values from loaded JSON, defaulting to disabled if missing or invalid.
+    standalone_cfg = _read_standalone_config(settings)
+
+    # | Get mode switch configuration values from loaded JSON, defaulting to disabled if missing or invalid.
+    mode_switch_cfg = _read_mode_switch_config(settings)
+
+    # | read_mode() returns 'mcs' or 'standalone' based on GPIO pin state or default config.
+    # | cleanup_mode_switch() releases GPIO resources when main loop exits.
+    read_mode, cleanup_mode_switch, mode_source = _setup_mode_switch(mode_switch_cfg)
+
+    # * Main loop state variables
+    # | standalone_loaded: True if TLE data has been successfully loaded for standalone mode.
+    standalone_loaded = False
+    
+    # | standalone_started: True if standalone tracking has been started.
+    standalone_started = False
+    
+    # | standalone_tle_warning_printed: True if a warning about missing TLE data has been printed to avoid repeated warnings.
+    standalone_tle_warning_printed = False
+    
+    # | active_mode: Tracks the current mode ('mcs' or 'standalone') to detect changes and print mode switch messages.
+    active_mode = None
+
+    # | last_uart_retry: Timestamp of the last UART connection attempt to throttle retries.
+    last_uart_retry = 0.0
+
+    # * Start web browser
+    # | Start Browser subprocess in background mode to serve web UI.
     browser_process = startBrowser(background=True)
 
-    print("Starting Ground Station Prototype...")
+    # * Main loop
+    print(f"Starting Ground Station Prototype... mode source: {mode_source}")
     try:
         while True:
-            # Keep the process alive and restart browser server if it exits unexpectedly.
             
             # > ------------------
             # > BROWSER PROCESSING
             # > ------------------
             # - KEEP BROWSER ALIVE
+            # | Keep the process alive and restart browser server if it exits unexpectedly.
             if browser_process is None or browser_process.poll() is not None:
                 print("Browser process stopped, restarting...")
+                # | Start browser
                 browser_process = startBrowser(background=True)
+                # | Reset standalone state to ensure TLE is reloaded and tracking is restarted after browser restart.
+                standalone_loaded = False
+                standalone_started = False
+                standalone_tle_warning_printed = False
+                last_uart_retry = 0.0
 
             # > ------------------
-            # > EXTERNAL MCS MODE
+            # >  STATE MANAGEMENT
             # > ------------------
+            # - READ CURRENT STATE FROM CONTROLLER
+            # | Returns a dictionary containing telemetry values (target and actual azimuth/elevation) 
             state = {}
             try:
+                # | Get through API to avoid direct UART access in this script, since Browser process owns the serial port.
                 state = _api_get('/api/control/state')
             except error.URLError:
                 pass
             except Exception:
                 pass
 
-            # - FORMATTING
+            # > ------------------
+            # >  UART CONNECTION
+            # > ------------------
+            # - ATTEMPT UART RECONNECT IF NOT CONNECTED
+            if not state.get('uart_connected'):
+                # | Attempt to reconnect UART every 5 seconds if not connected.
+                now = time.time()
+                if now - last_uart_retry >= 5.0:
+                    try:
+                        response = _api_post('/api/control/connect-uart')
+                        if response.get('status') != 'ok':
+                            print(f"UART reconnect failed: {response.get('message', 'unknown error')}")
+                    except Exception as exc:
+                        print(f"UART reconnect failed: {exc}")
+                    # | Record this attempt time to throttle reconnect retries regardless of result.
+                    last_uart_retry = now
+                    # | Get updated state after reconnect attempt to reflect current UART connection status.
+                    try:
+                        state = _api_get('/api/control/state')
+                    except Exception:
+                        state = {}
 
-
-            # Print latest received telemetry 
+            # > ------------------
+            # >  TELEMETRY DATA
+            # > ------------------
+            # - PRINT LATEST TELEMETRY ROW
+            # | Get current UTC time 
             ts = time.strftime('%H:%M:%S')
+
+            # | Get current target and actual azimuth/elevation values from state dictionary.
             target_az = state.get('target_azimuth')
             target_el = state.get('target_elevation')
             actual_az = state.get('actual_azimuth')
             actual_el = state.get('actual_elevation')
 
+            # | Print telemetry row with timestamp, target/actual values, and errors if available; otherwise indicate waiting for STM32.
             if None not in (target_az, target_el, actual_az, actual_el):
                 az_e = actual_az - target_az
                 el_e = actual_el - target_el
@@ -131,19 +320,84 @@ def main():
             else:
                 print(f"{ts:10} | waiting for STM32...")
 
+            # > ------------------
+            # >    MODE CHECK
+            # > ------------------
+            # - READ CURRENT MODE
+            # | From GPIO pin or default config
+            requested_mode = read_mode()
+            # | If the requested mode differs from the active mode, update the active mode.
+            if requested_mode != active_mode:
+                print(f"Mode switch -> {requested_mode.upper()}")
+                active_mode = requested_mode
 
             # > ------------------
-            # > STANDALONE MODE
+            # >  STANDALONE MODE
             # > ------------------
-            # - TLE RECEIVED
+            # - LOAD TLE AND START TRACKING IF STANDALONE MODE IS REQUESTED
+            # | If standalone mode is requested and enabled, attempt to load TLE data and start tracking.
+            if requested_mode == 'standalone' and standalone_cfg.get('enabled'):
+                # | Get name of satellite and TLE lines from config
+                name = standalone_cfg.get('name')
+                line1 = standalone_cfg.get('line1')
+                line2 = standalone_cfg.get('line2')
 
+                # | If TLE data is not yet loaded, attempt to load it via API call to Browser process.
+                if not standalone_loaded:
+                    # | Only attempt to load TLE if all fields are present; otherwise print a warning once.
+                    if name and line1 and line2:
+                        try:
+                            # | Send TLE data to Browser API for loading into GroundStationController.
+                            response = _api_post(
+                                '/api/control/load-tle',
+                                {'name': name, 'line1': line1, 'line2': line2},
+                            )
+                            # | Check response status to determine if TLE load was successful.
+                            standalone_loaded = response.get('status') == 'ok'
+                            print(f"Standalone TLE load: {response.get('message', 'no response message')}")
+                        except Exception as exc:
+                            standalone_loaded = False
+                            print(f"Standalone TLE load failed: {exc}")
+                        standalone_tle_warning_printed = False
+                    else:
+                        if not standalone_tle_warning_printed:
+                            print('Standalone mode enabled but TLE fields are incomplete')
+                            standalone_tle_warning_printed = True
+                        standalone_loaded = False
 
-            # - TARGET ANGLE GENERATION
+                # | If TLE is loaded and standalone tracking has not yet started, attempt to start it via API call.
+                if standalone_loaded and not standalone_started:
+                    try:
+                        response = _api_post(
+                            '/api/control/start-standalone',
+                            {'refresh_rate_hz': standalone_cfg.get('refresh_rate_hz')},
+                        )
+                        standalone_started = response.get('status') == 'ok'
+                        print(f"Standalone tracking: {response.get('message', 'no response message')}")
+                    except Exception as exc:
+                        standalone_started = False
+                        print(f"Standalone tracking failed: {exc}")
+            else:
+                # | If standalone mode is not requested or not enabled, stop standalone tracking if it was previously started.
+                if requested_mode == 'standalone' and not standalone_cfg.get('enabled'):
+                    if not standalone_tle_warning_printed:
+                        print('Standalone switch selected but standalone mode is disabled in config')
+                        standalone_tle_warning_printed = True
 
+                if standalone_started:
+                    try:
+                        _api_post('/api/control/stop-standalone')
+                    except Exception:
+                        pass
+                    standalone_started = False
+                    print('Standalone tracking: stopped (MCS mode)')
 
-            # - SENDING TO STM32
+                if requested_mode != 'standalone':
+                    standalone_tle_warning_printed = False
 
-
+            # > ------------------
+            # >  EXTERNAL MCS MODE
+            # > ------------------
 
             # > ------------------
             # > REFERENCE INPUTS
@@ -157,12 +411,24 @@ def main():
 
             time.sleep(MAIN_LOOP_SLEEP_SECONDS)
     except KeyboardInterrupt:
+        # | Graceful shutdown on Ctrl+C
         print("Shutting down Ground Station Prototype...")
     finally:
+        # | Cleanup resources and terminate processes
         try:
+            # | Stop standalone tracking if it was running
+            _api_post('/api/control/stop-standalone')
+        except Exception:
+            pass
+        try:
+            # | Disconnect UART if it was connected
             _api_post('/api/control/disconnect-uart')
         except Exception:
             pass
+        # | Cleanup GPIO resources for mode switch if applicable
+        cleanup_mode_switch()
+
+        # | Terminate Browser process if still running
         if browser_process is not None and browser_process.poll() is None:
             browser_process.terminate()
             try:
@@ -170,5 +436,8 @@ def main():
             except Exception:
                 browser_process.kill()
 
-if __name__ == "__main__": threading.Thread(target=main, daemon=True).start()
+# * Main entry point
+# | Run main loop on the main thread so the process stays alive and Ctrl+C is handled correctly.
+if __name__ == "__main__":
+    main()
 # endregion

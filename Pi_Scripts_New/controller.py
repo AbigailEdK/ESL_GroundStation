@@ -3,8 +3,12 @@ import time
 from datetime import datetime, timezone
 import re
 
-from . import config
-from .utils import startTracker, startUART, stopUART
+try:
+    from . import config
+    from .utils import startTracker, startUART, stopUART
+except ImportError:
+    import config
+    from utils import startTracker, startUART, stopUART
 
 
 class GroundStationController:

@@ -19,9 +19,10 @@ from routes import (
     create_recording_blueprint,
     create_snapshots_blueprint,
     create_telemetry_blueprint,
+    create_tle_library_blueprint,
     create_ui_blueprint,
 )
-from services import ControlService, RecordingService, SnapshotService, TelemetryService
+from services import ControlService, RecordingService, SnapshotService, TelemetryService, TleLibraryService
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 if PROJECT_ROOT not in sys.path:
@@ -50,6 +51,7 @@ def _load_integration_settings():
         'storage': {
             'recordings_dir': '~/GSWebUI/recordings',
             'snapshots_dir': '~/GSWebUI/snapshots',
+            'tle_library_path': os.path.join(PROJECT_ROOT, 'Config', 'saved_satellites.json'),
         },
     }
 
@@ -100,6 +102,12 @@ class WebManagerApp:
         self.snapshot_service = SnapshotService(
             os.path.expanduser(storage.get('snapshots_dir', '~/GSWebUI/snapshots'))
         )
+        self.tle_library_service = TleLibraryService(
+            os.path.expanduser(
+                storage.get('tle_library_path', os.path.join(PROJECT_ROOT, 'Config', 'saved_satellites.json'))
+            ),
+            controller=self.controller,
+        )
 
         self._register_blueprints()
 
@@ -138,6 +146,9 @@ class WebManagerApp:
         )
         self.app.register_blueprint(
             create_snapshots_blueprint(self.snapshot_service)
+        )
+        self.app.register_blueprint(
+            create_tle_library_blueprint(self.tle_library_service)
         )
 
 
