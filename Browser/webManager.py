@@ -31,6 +31,11 @@ from Pi_Scripts_New.controller import GroundStationController
 
 
 def _load_integration_settings():
+    #  % ------------------------------------------------------------
+    #  % Inputs: None directly; reads Config/integration_settings.json and uses built-in default settings.
+    #  % Side-effects: Reads configuration from disk and merges loaded sections into default controller/telemetry/storage values.
+    #  % Returns: A settings dictionary used to configure controller behavior and service wiring.
+    #  % ------------------------------------------------------------
     settings_path = os.path.join(PROJECT_ROOT, 'Config', 'integration_settings.json')
     default_settings = {
         'controller': {
@@ -64,7 +69,17 @@ def _load_integration_settings():
 
 
 class WebManagerApp:
+    #  % ------------------------------------------------------------
+    #  % Inputs: Flask runtime context and project settings resolved by this module.
+    #  % Side-effects: Defines the app container that owns services and the shared controller instance.
+    #  % Returns: The WebManagerApp class type for creating configured web app instances.
+    #  % ------------------------------------------------------------
     def __init__(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: None directly; uses loaded settings to configure telemetry, control, recording, and snapshot services.
+        #  % Side-effects: Initializes Flask app folders, creates controller/service objects, and registers all blueprints.
+        #  % Returns: None; stores initialized components on self for the process lifetime.
+        #  % ------------------------------------------------------------
         self.app = Flask(__name__)
         self.app.template_folder = os.path.join(os.path.dirname(__file__), 'webpages')
         self.app.static_folder = os.path.join(os.path.dirname(__file__), 'static')
@@ -89,6 +104,11 @@ class WebManagerApp:
         self._register_blueprints()
 
     def _create_controller(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Controller settings section from self.settings, including UART and feedback options.
+        #  % Side-effects: Attempts to construct GroundStationController and logs errors if construction fails.
+        #  % Returns: A GroundStationController instance, or None when initialization fails.
+        #  % ------------------------------------------------------------
         controller_settings = self.settings.get('controller', {})
         auto_connect_uart = bool(controller_settings.get('auto_connect_uart', False))
         try:
@@ -101,6 +121,11 @@ class WebManagerApp:
             return None
 
     def _register_blueprints(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Already-created service instances attached to self.
+        #  % Side-effects: Registers UI, telemetry, control, recording, and snapshot routes on the Flask app.
+        #  % Returns: None; blueprints are attached to self.app in-place.
+        #  % ------------------------------------------------------------
         self.app.register_blueprint(create_ui_blueprint())
         self.app.register_blueprint(
             create_telemetry_blueprint(self.telemetry_service)
@@ -117,6 +142,11 @@ class WebManagerApp:
 
 
 def create_app():
+    #  % ------------------------------------------------------------
+    #  % Inputs: None.
+    #  % Side-effects: Instantiates WebManagerApp and builds all web/service/controller wiring.
+    #  % Returns: A configured Flask application object ready for app.run or WSGI hosting.
+    #  % ------------------------------------------------------------
     return WebManagerApp().app
 
 

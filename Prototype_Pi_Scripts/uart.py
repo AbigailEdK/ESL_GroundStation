@@ -10,8 +10,18 @@ AZ_MISSING_TEXT = "AZxxx.x"
 EL_MISSING_TEXT = "ELxxx.x"
 
 class UARTComm:
+    #  % ------------------------------------------------------------
+    #  % Inputs: Class constructor arguments at instantiation and module dependencies used by its methods.
+    #  % Side-effects: Defines state and behavior used by instances across the module.
+    #  % Returns: A class definition used to construct and manage instances.
+    #  % ------------------------------------------------------------
     def __init__(self, port="/dev/serial0", baudrate=115200, timeout=1):
         """Initialize UART communication"""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: port, baudrate, timeout.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: An internal helper result consumed by the caller.
+        #  % ------------------------------------------------------------
         self.ser = serial.Serial(port, baudrate=baudrate, timeout=timeout)
         self.running = True
         self.rx_thread = None
@@ -25,6 +35,11 @@ class UARTComm:
             azimuth: Azimuth angle in degrees, or None to skip
             elevation: Elevation angle in degrees, or None to skip
         """
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: azimuth, elevation.
+        #  % Side-effects: May change device/file state and update in-memory tracking fields.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         if azimuth is None:
             az_str = AZ_MISSING_TEXT
         else:
@@ -42,12 +57,22 @@ class UARTComm:
     
     def close(self):
         """Close UART connection"""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: May stop active work, release resources, and update shared runtime state.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         self.running = False
         self.ser.close()
         print("UART connection closed")
 
     def rx_loop(self, latest, lock, log_writer, log_file):
         """Continuously read from UART and update latest telemetry data"""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: latest, lock, log_writer, log_file.
+        #  % Side-effects: Runs loop/supervisor logic that coordinates subsystems over time.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         while self.running:
             try:
                 line = self.ser.readline().decode("ascii", errors="ignore").strip()

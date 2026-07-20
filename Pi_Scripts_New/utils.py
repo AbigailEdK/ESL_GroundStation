@@ -45,6 +45,11 @@ satellite_tracker = None
 # endregion
 
 def startBrowser(background=True):
+    #  % ------------------------------------------------------------
+    #  % Inputs: background flag controlling subprocess (non-blocking) versus run (blocking) behavior.
+    #  % Side-effects: Checks web manager path and launches Browser webManager.py process accordingly.
+    #  % Returns: Popen object in background mode, otherwise CompletedProcess from blocking run.
+    #  % ------------------------------------------------------------
     if not os.path.exists(WEB_MANAGER_PATH):
         raise FileNotFoundError(f"webManager.py not found: {WEB_MANAGER_PATH}")
 
@@ -57,6 +62,11 @@ def startBrowser(background=True):
 
 
 def stopBrowser():
+    #  % ------------------------------------------------------------
+    #  % Inputs: No direct parameters; uses global browser_process handle.
+    #  % Side-effects: Attempts graceful terminate then force kill if Browser process does not exit in timeout.
+    #  % Returns: None; process handle is managed for shutdown semantics.
+    #  % ------------------------------------------------------------
     global browser_process
     if browser_process is None or browser_process.poll() is not None:
         return
@@ -80,6 +90,11 @@ def startUART(
     rx_target=None,
     rx_thread_name='uart-rx',
 ):
+    #  % ------------------------------------------------------------
+    #  % Inputs: Optional telemetry storage objects, UART port settings, and optional custom RX callback settings.
+    #  % Side-effects: Creates UARTComm singleton if missing and may start RX loop using custom or default telemetry handler.
+    #  % Returns: UARTComm instance when available, otherwise None if serial initialization failed.
+    #  % ------------------------------------------------------------
     global uart_comm
     if uart_comm is None:
         try:
@@ -95,6 +110,11 @@ def startUART(
         uart_comm.start_rx_loop(rx_target, thread_name=rx_thread_name)
     elif default_rx_requested:
         def _default_line_handler(line):
+            #  % ------------------------------------------------------------
+            #  % Inputs: line text from UART RX thread for default $TLM telemetry parsing path.
+            #  % Side-effects: Parses telemetry values, updates shared latest dict under lock, and appends row to CSV log.
+            #  % Returns: None; mutates shared telemetry/log objects captured from outer scope.
+            #  % ------------------------------------------------------------
             if not line.startswith('$TLM,'):
                 return
 
@@ -127,6 +147,11 @@ def startUART(
     return uart_comm
 
 def stopUART(uart_instance=None):
+    #  % ------------------------------------------------------------
+    #  % Inputs: Optional uart_instance to close directly; otherwise uses global uart_comm reference.
+    #  % Side-effects: Stops RX loop via close, clears global UART reference when applicable.
+    #  % Returns: None; UART resources are released in-place.
+    #  % ------------------------------------------------------------
     global uart_comm
     if uart_instance is not None:
         uart_instance.close()
@@ -139,6 +164,11 @@ def stopUART(uart_instance=None):
         uart_comm = None
 
 def startTracker(lat=-33.918861, lon=18.4233, elevation_m=0):
+    #  % ------------------------------------------------------------
+    #  % Inputs: lat, lon, elevation_m observer coordinates for tracker initialization.
+    #  % Side-effects: Creates global SatelliteTracker singleton if not already present.
+    #  % Returns: SatelliteTracker instance used by controller/tracking workflows.
+    #  % ------------------------------------------------------------
     global satellite_tracker
     if satellite_tracker is None:
         satellite_tracker = SatelliteTracker(lat=lat, lon=lon, elevation_m=elevation_m)
@@ -146,18 +176,33 @@ def startTracker(lat=-33.918861, lon=18.4233, elevation_m=0):
     return satellite_tracker
 
 def stopTracker():
+    #  % ------------------------------------------------------------
+    #  % Inputs: No direct parameters; uses global satellite_tracker reference.
+    #  % Side-effects: Clears tracker singleton reference so it can be reinitialized later.
+    #  % Returns: None; tracker reference is removed in-place.
+    #  % ------------------------------------------------------------
     global satellite_tracker
     if satellite_tracker is not None:
         satellite_tracker = None
 
 
 def handle_exit_signal(signum, _frame):
+    #  % ------------------------------------------------------------
+    #  % Inputs: signum and frame values from OS signal handler invocation.
+    #  % Side-effects: Stops Browser, UART, and tracker subsystems, then exits process.
+    #  % Returns: Does not return normally; raises SystemExit(0).
+    #  % ------------------------------------------------------------
     stopBrowser()
     stopUART()
     stopTracker()
     raise SystemExit(0)
 
 def csvLogSetup(log_dir):
+    #  % ------------------------------------------------------------
+    #  % Inputs: log_dir path for telemetry CSV output.
+    #  % Side-effects: Creates log directory/file, writes header row, and flushes file handle.
+    #  % Returns: Tuple (log_file, log_writer) for subsequent telemetry logging.
+    #  % ------------------------------------------------------------
     os.makedirs(log_dir, exist_ok=True)
     log_filename = os.path.join(log_dir, f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
     log_file = open(log_filename, 'w', newline='')

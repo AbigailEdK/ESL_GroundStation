@@ -35,18 +35,23 @@ PI_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Pi_Scripts_New")
 PROTOTYPE_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Prototype_Pi_Scripts")
 BROWSER_SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "Browser")
 WEB_MANAGER_PATH = os.path.join(BROWSER_SCRIPTS_DIR, "webManager.py")
-MAIN_LOOP_SLEEP_SECONDS = 1.0
 # endregion
 
 # region CLASSES
 # endregion
 
 # region VARIABLES
+MAIN_LOOP_SLEEP_SECONDS = 1.0
 API_BASE_URL = 'http://127.0.0.1:5000'
 # endregion
 
 
 def _api_post(path, payload=None, timeout=2.0):
+    #  % ------------------------------------------------------------
+    #  % Inputs: path endpoint suffix, optional payload dict, and timeout seconds.
+    #  % Side-effects: Issues HTTP POST to local Browser API and JSON-decodes the response body.
+    #  % Returns: Dictionary parsed from API response, or empty dict when response has no body.
+    #  % ------------------------------------------------------------
     data = json.dumps(payload or {}).encode('utf-8')
     req = request.Request(
         f"{API_BASE_URL}{path}",
@@ -60,6 +65,11 @@ def _api_post(path, payload=None, timeout=2.0):
 
 
 def _api_get(path, timeout=2.0):
+    #  % ------------------------------------------------------------
+    #  % Inputs: path endpoint suffix and timeout seconds.
+    #  % Side-effects: Issues HTTP GET to local Browser API and JSON-decodes the response body.
+    #  % Returns: Dictionary parsed from API response, or empty dict when response has no body.
+    #  % ------------------------------------------------------------
     req = request.Request(f"{API_BASE_URL}{path}", method='GET')
     with request.urlopen(req, timeout=timeout) as response:
         body = response.read().decode('utf-8')
@@ -67,6 +77,11 @@ def _api_get(path, timeout=2.0):
 
 # region MAIN
 def main():
+    #  % ------------------------------------------------------------
+    #  % Inputs: No direct parameters; uses API_BASE_URL, MAIN_LOOP_SLEEP_SECONDS, and Browser subprocess state.
+    #  % Side-effects: Starts/restarts Browser process, polls control state, prints live telemetry rows, and disconnects UART on shutdown.
+    #  % Returns: None; runs until interrupted or process termination.
+    #  % ------------------------------------------------------------
     global browser_process
 
     browser_process = None

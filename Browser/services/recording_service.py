@@ -6,12 +6,27 @@ from flask import jsonify, send_file
 
 
 class RecordingService:
+    #  % ------------------------------------------------------------
+    #  % Inputs: Class constructor arguments at instantiation and module dependencies used by its methods.
+    #  % Side-effects: Defines state and behavior used by instances across the module.
+    #  % Returns: A class definition used to construct and manage instances.
+    #  % ------------------------------------------------------------
     def __init__(self, recordings_dir):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: recordings_dir.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: An internal helper result consumed by the caller.
+        #  % ------------------------------------------------------------
         self.recordings_dir = recordings_dir
         os.makedirs(self.recordings_dir, exist_ok=True)
         self.recording_processes = {}
 
     def _safe_path(self, filename):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: filename.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: An internal helper result consumed by the caller.
+        #  % ------------------------------------------------------------
         filepath = os.path.join(self.recordings_dir, filename)
         if not os.path.abspath(filepath).startswith(os.path.abspath(self.recordings_dir)):
             return None
@@ -19,6 +34,11 @@ class RecordingService:
 
     def start_recording(self, data):
         """Start recording from a camera."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: data.
+        #  % Side-effects: May start threads/processes, open resources, and update shared runtime state.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         camera_url = data.get('url')
         camera_name = data.get('name', 'camera')
         camera_id = data.get('id')
@@ -96,6 +116,11 @@ class RecordingService:
 
     def stop_recording(self, data):
         """Stop recording from a camera."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: data.
+        #  % Side-effects: May stop active work, release resources, and update shared runtime state.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         camera_id = data.get('id')
 
         if camera_id not in self.recording_processes:
@@ -121,6 +146,11 @@ class RecordingService:
 
     def list_recordings(self):
         """List all recordings."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         recordings = []
         try:
             for filename in os.listdir(self.recordings_dir):
@@ -145,6 +175,11 @@ class RecordingService:
 
     def recording_status(self):
         """Get status of all recordings."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         status = {}
         for camera_id, process in self.recording_processes.items():
             is_running = process.poll() is None
@@ -156,6 +191,11 @@ class RecordingService:
 
     def delete_recording(self, data):
         """Delete a recording file."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: data.
+        #  % Side-effects: May change device/file state and update in-memory tracking fields.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         filename = data.get('filename')
         filepath = self._safe_path(filename)
 
@@ -172,6 +212,11 @@ class RecordingService:
 
     def download_recording(self, filename):
         """Download a recording file."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: filename.
+        #  % Side-effects: May change device/file state and update in-memory tracking fields.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         filepath = self._safe_path(filename)
 
         if filepath is None:

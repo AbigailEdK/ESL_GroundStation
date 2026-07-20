@@ -2,8 +2,18 @@ import csv
 from skyfield.api import load, EarthSatellite, wgs84
 
 class SatelliteTracker:
+    #  % ------------------------------------------------------------
+    #  % Inputs: Class constructor arguments at instantiation and module dependencies used by its methods.
+    #  % Side-effects: Defines state and behavior used by instances across the module.
+    #  % Returns: A class definition used to construct and manage instances.
+    #  % ------------------------------------------------------------
     def __init__(self, lat, lon, elevation_m=0):
         """Initialize tracker with ground station coordinates"""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: lat, lon, elevation_m.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: An internal helper result consumed by the caller.
+        #  % ------------------------------------------------------------
         self.ts = load.timescale()
         self.observer = wgs84.latlon(lat, lon, elevation_m)
         self.satellite = None
@@ -11,6 +21,11 @@ class SatelliteTracker:
     
     def load_tle_from_csv_data(self, name, tle_line1, tle_line2):
         """Load TLE data from provided strings"""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: name, tle_line1, tle_line2.
+        #  % Side-effects: May change device/file state and update in-memory tracking fields.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         try:
             self.satellite = EarthSatellite(tle_line1, tle_line2, name, self.ts)
             print(f"Loaded: {name}")
@@ -30,6 +45,11 @@ class SatelliteTracker:
         Returns:
             tuple: (azimuth, elevation, distance_km, is_visible)
         """
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: time_utc.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         if not self.satellite:
             raise ValueError("No satellite loaded")
         

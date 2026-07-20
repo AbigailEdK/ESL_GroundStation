@@ -43,6 +43,11 @@ except Exception as e:
 
 # --- RX thread ---
 def rx_loop():
+    #  % ------------------------------------------------------------
+    #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+    #  % Side-effects: Runs loop/supervisor logic that coordinates subsystems over time.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     while running:
         try:
             line = ser.readline().decode('ascii', errors='ignore').strip()

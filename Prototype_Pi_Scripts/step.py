@@ -32,6 +32,11 @@ GPIO.output(3, GPIO.HIGH)
 
 def is_angle_valid(value, angle_type):
     """Checks if an angle is within the defined MIN/MAX bounds."""
+    #  % ------------------------------------------------------------
+    #  % Inputs: Parameters: value, angle_type.
+    #  % Side-effects: Executes module logic and may read or mutate internal state.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     if angle_type == 'az':
         if not (AZ_MIN <= value <= AZ_MAX):
             print(f"AZ Error: Azimuth must be between {AZ_MIN} and {AZ_MAX}.")
@@ -43,6 +48,11 @@ def is_angle_valid(value, angle_type):
     return True
 
 def start_logging():
+    #  % ------------------------------------------------------------
+    #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+    #  % Side-effects: May start threads/processes, open resources, and update shared runtime state.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     global log_process, led_flash
     if log_process is None:
         log_process = subprocess.Popen(
@@ -61,6 +71,11 @@ def start_logging():
         print("[STEP] Logging started")
 
 def stop_logging():
+    #  % ------------------------------------------------------------
+    #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+    #  % Side-effects: May stop active work, release resources, and update shared runtime state.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     global log_process, led_flash
     if log_process is not None:
         try:

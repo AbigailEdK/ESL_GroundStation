@@ -4,11 +4,26 @@ from flask import jsonify
 
 
 class TelemetryService:
+    #  % ------------------------------------------------------------
+    #  % Inputs: Class constructor arguments at instantiation and module dependencies used by its methods.
+    #  % Side-effects: Defines state and behavior used by instances across the module.
+    #  % Returns: A class definition used to construct and manage instances.
+    #  % ------------------------------------------------------------
     def __init__(self, controller=None, settings=None):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: controller, settings.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: An internal helper result consumed by the caller.
+        #  % ------------------------------------------------------------
         self.controller = controller
         self.settings = settings or {}
 
     def _controller_state(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         if self.controller is None:
             return {}
         try:
@@ -18,6 +33,11 @@ class TelemetryService:
 
     def system_info(self):
         """Return system information as JSON."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         import psutil
 
         return jsonify(
@@ -31,6 +51,11 @@ class TelemetryService:
 
     def satellite_status(self):
         """Return current satellite tracking status."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         state = self._controller_state()
 
         azimuth = state.get('target_azimuth')
@@ -66,6 +91,11 @@ class TelemetryService:
 
     def upcoming_passes(self):
         """Return upcoming satellite passes."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         state = self._controller_state()
         satellite = state.get('satellite_name')
         if not satellite:
@@ -86,6 +116,11 @@ class TelemetryService:
 
     def receiver_config(self):
         """Return receiver configuration."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         return jsonify(
             {
                 'frequency': self.settings.get('frequency_mhz', 145.800),
@@ -99,6 +134,11 @@ class TelemetryService:
 
     def transmitter_config(self):
         """Return transmitter configuration."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         mode = self._controller_state().get('mode') or 'idle'
         return jsonify(
             {
@@ -112,6 +152,11 @@ class TelemetryService:
 
     def telemetry_data(self):
         """Return recent telemetry data."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         state = self._controller_state()
         telemetry = []
         for i in range(10):
@@ -138,6 +183,11 @@ class TelemetryService:
 
     def system_health(self):
         """Return detailed system health."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: A state/report payload for API or internal callers.
+        #  % ------------------------------------------------------------
         state = self._controller_state()
         mode = state.get('mode') or 'idle'
         tracking_active = mode == 'standalone' and state.get('standalone_running')
@@ -160,6 +210,11 @@ class TelemetryService:
     @staticmethod
     def get_cpu_temperature():
         """Get Raspberry Pi CPU temperature."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         try:
             with open('/sys/class/thermal/thermal_zone0/temp', 'r', encoding='utf-8') as file:
                 temp = int(file.read()) / 1000

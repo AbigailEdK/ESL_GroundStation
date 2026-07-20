@@ -32,6 +32,11 @@ REFRESH_RATE = 1.0       # seconds
 
 def load_tle_names_from_csv(csv_file):
     """Load all satellite names from TLE.csv"""
+    #  % ------------------------------------------------------------
+    #  % Inputs: Parameters: csv_file.
+    #  % Side-effects: May change device/file state and update in-memory tracking fields.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     try:
         with open(csv_file, 'r') as f:
             reader = csv.reader(f)
@@ -46,6 +51,11 @@ def load_tle_names_from_csv(csv_file):
 
 def load_tle_by_name(csv_file, sat_name):
     """Load TLE data for a specific satellite by name"""
+    #  % ------------------------------------------------------------
+    #  % Inputs: Parameters: csv_file, sat_name.
+    #  % Side-effects: May change device/file state and update in-memory tracking fields.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     try:
         with open(csv_file, 'r') as f:
             reader = csv.reader(f)
@@ -64,6 +74,11 @@ def load_tle_by_name(csv_file, sat_name):
 
 def check_tle_age(tle_line1, max_age_days):
     """Check if TLE is older than max_age_days. Returns (age_days, is_old, warning_msg)"""
+    #  % ------------------------------------------------------------
+    #  % Inputs: Parameters: tle_line1, max_age_days.
+    #  % Side-effects: Executes module logic and may read or mutate internal state.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     try:
         yy = int(tle_line1[18:20])
         ddd = float(tle_line1[20:32])
@@ -87,6 +102,11 @@ def check_tle_age(tle_line1, max_age_days):
 
 def find_next_pass(tracker, max_search_hours):
     """Find when satellite rises above EL_MIN using Skyfield. Returns (rise_time, rise_az)"""
+    #  % ------------------------------------------------------------
+    #  % Inputs: Parameters: tracker, max_search_hours.
+    #  % Side-effects: Executes module logic and may read or mutate internal state.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     from skyfield.api import load
     
     ts = load.timescale()
@@ -110,6 +130,11 @@ def find_next_pass(tracker, max_search_hours):
 
 def format_time_remaining(target_time):
     """Format remaining time until target"""
+    #  % ------------------------------------------------------------
+    #  % Inputs: Parameters: target_time.
+    #  % Side-effects: Executes module logic and may read or mutate internal state.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     now = datetime.now(timezone.utc) # <-- FIX: Use timezone-aware 'now'
     remaining = target_time - now
     
@@ -127,6 +152,11 @@ def format_time_remaining(target_time):
         return f"{seconds}s"
 
 def main():
+    #  % ------------------------------------------------------------
+    #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+    #  % Side-effects: Runs loop/supervisor logic that coordinates subsystems over time.
+    #  % Returns: The function result for the caller (type depends on operation).
+    #  % ------------------------------------------------------------
     print("TLE Satellite Tracker\n")
     print(f"Current time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
     tracker = SatelliteTracker(LATITUDE, LONGITUDE, ELEVATION_M)

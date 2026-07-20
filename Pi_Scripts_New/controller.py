@@ -8,7 +8,17 @@ from .utils import startTracker, startUART, stopUART
 
 
 class GroundStationController:
+    #  % ------------------------------------------------------------
+    #  % Inputs: Runtime settings (UART, refresh, feedback) plus tracker/UART dependencies from module imports.
+    #  % Side-effects: Defines shared ground-station state and methods for UART control, feedback parsing, and tracking loops.
+    #  % Returns: The GroundStationController class type used by Browser services and API handlers.
+    #  % ------------------------------------------------------------
     def __init__(self, auto_connect_uart=False, settings=None):
+        #  % ------------------------------------------------------------
+        #  % Inputs: auto_connect_uart flag and optional settings dict with UART/tracking parameters.
+        #  % Side-effects: Initializes locks, tracker instance, controller state fields, and optionally opens UART immediately.
+        #  % Returns: None; prepares controller object for command/telemetry operations.
+        #  % ------------------------------------------------------------
         self.settings = settings or {}
         self._lock = threading.Lock()
         self._tracking_thread = None
@@ -55,6 +65,11 @@ class GroundStationController:
             self.connect_uart()
 
     def connect_uart(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters; uses configured UART port, baudrate, timeout, and feedback flag.
+        #  % Side-effects: Opens serial connection, clears input buffer, may start RX loop callback, and updates state/error fields.
+        #  % Returns: Tuple (ok, message) describing UART connection result.
+        #  % ------------------------------------------------------------
         with self._lock:
             if self.uart is not None:
                 self.state['uart_connected'] = True
@@ -83,6 +98,11 @@ class GroundStationController:
                 return False, str(exc)
 
     def disconnect_uart(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters; uses current self.uart instance if connected.
+        #  % Side-effects: Stops UART activity, closes serial resources, clears connection flags, and records close errors if any.
+        #  % Returns: Tuple (ok, message) describing UART disconnection result.
+        #  % ------------------------------------------------------------
         with self._lock:
             if self.uart is not None:
                 try:
@@ -103,6 +123,11 @@ class GroundStationController:
         - "ERR:OVERCURRENT"
         - "STATE:TRACKING"
         """
+        #  % ------------------------------------------------------------
+        #  % Inputs: line text received from STM32 UART feedback stream.
+        #  % Side-effects: Parses regex fields for actual angles, fault text, and STM32 state markers.
+        #  % Returns: Dictionary of parsed feedback keys; empty dict when line has no recognized data.
+        #  % ------------------------------------------------------------
         if not line:
             return {}
 
@@ -127,6 +152,11 @@ class GroundStationController:
         return payload
 
     def _handle_feedback_line(self, line):
+        #  % ------------------------------------------------------------
+        #  % Inputs: line text forwarded from the UART RX callback.
+        #  % Side-effects: Updates last RX metadata and merges parsed telemetry/fault fields into locked controller state.
+        #  % Returns: None; mutates controller state in-place.
+        #  % ------------------------------------------------------------
         parsed = self._parse_feedback_line(line)
         now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -141,6 +171,11 @@ class GroundStationController:
                     self.state['last_error'] = None
 
     def load_tle(self, name, line1, line2):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Satellite name and TLE line1/line2 strings.
+        #  % Side-effects: Loads TLE into tracker and updates satellite_name/last_error state fields.
+        #  % Returns: Tuple (ok, message) indicating whether TLE load succeeded.
+        #  % ------------------------------------------------------------
         ok = self.tracker.load_tle_from_csv_data(name, line1, line2)
         with self._lock:
             if ok:
@@ -151,6 +186,11 @@ class GroundStationController:
             return False, 'Failed to load TLE'
 
     def send_external_target(self, azimuth, elevation):
+        #  % ------------------------------------------------------------
+        #  % Inputs: azimuth and elevation target values supplied by external MCS/API requests.
+        #  % Side-effects: Stores target fields, attempts UART transmission, and updates tx timestamp/error status.
+        #  % Returns: Tuple (ok, message) indicating whether target was accepted/transmitted.
+        #  % ------------------------------------------------------------
         with self._lock:
             self.state['mode'] = 'external'
             self.state['target_azimuth'] = azimuth
@@ -171,6 +211,11 @@ class GroundStationController:
                 return False, str(exc)
 
     def start_standalone_tracking(self, refresh_rate_hz=None):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Optional refresh_rate_hz override for tracking update cadence.
+        #  % Side-effects: Validates tracker readiness, sets mode, starts background tracking thread, and updates run flags.
+        #  % Returns: Tuple (ok, message) indicating start result or reason tracking was not started.
+        #  % ------------------------------------------------------------
         with self._lock:
             if self.tracker.satellite is None:
                 return False, 'Load TLE first'
@@ -191,12 +236,22 @@ class GroundStationController:
             return True, 'Standalone tracking started'
 
     def stop_standalone_tracking(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters.
+        #  % Side-effects: Clears tracking run flag and returns controller mode to idle.
+        #  % Returns: Tuple (ok, message) confirming standalone tracking stop request.
+        #  % ------------------------------------------------------------
         with self._lock:
             self._tracking_running = False
             self.state['mode'] = 'idle'
         return True, 'Standalone tracking stopped'
 
     def _tracking_loop(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters; uses tracker, refresh rate, and UART connection state.
+        #  % Side-effects: Continuously computes target angles from TLE, updates state, and sends commands while tracking is enabled.
+        #  % Returns: None; loop exits when tracking flag is cleared.
+        #  % ------------------------------------------------------------
         while True:
             with self._lock:
                 if not self._tracking_running:
@@ -226,6 +281,11 @@ class GroundStationController:
             time.sleep(sleep_seconds)
 
     def get_state(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters.
+        #  % Side-effects: Copies state under lock and computes azimuth/elevation error convenience values.
+        #  % Returns: Dictionary snapshot of current controller state for API consumers.
+        #  % ------------------------------------------------------------
         with self._lock:
             state = dict(self.state)
             state['standalone_running'] = self._tracking_running

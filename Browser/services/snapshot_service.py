@@ -5,11 +5,26 @@ from flask import jsonify, send_file
 
 
 class SnapshotService:
+    #  % ------------------------------------------------------------
+    #  % Inputs: Class constructor arguments at instantiation and module dependencies used by its methods.
+    #  % Side-effects: Defines state and behavior used by instances across the module.
+    #  % Returns: A class definition used to construct and manage instances.
+    #  % ------------------------------------------------------------
     def __init__(self, snapshots_dir):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: snapshots_dir.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: An internal helper result consumed by the caller.
+        #  % ------------------------------------------------------------
         self.snapshots_dir = snapshots_dir
         os.makedirs(self.snapshots_dir, exist_ok=True)
 
     def _safe_path(self, filename):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: filename.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: An internal helper result consumed by the caller.
+        #  % ------------------------------------------------------------
         filepath = os.path.join(self.snapshots_dir, filename)
         if not os.path.abspath(filepath).startswith(os.path.abspath(self.snapshots_dir)):
             return None
@@ -17,6 +32,11 @@ class SnapshotService:
 
     def save_snapshot(self, data):
         """Save a snapshot from a camera."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: data.
+        #  % Side-effects: May change device/file state and update in-memory tracking fields.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         import requests
 
         camera_url = data.get('url')
@@ -47,6 +67,11 @@ class SnapshotService:
 
     def list_snapshots(self):
         """List all snapshots."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Reads current state and may compute derived values for reporting.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         snapshots = []
         try:
             for filename in sorted(os.listdir(self.snapshots_dir), reverse=True):
@@ -93,6 +118,11 @@ class SnapshotService:
 
     def snapshot_file(self, filename):
         """Serve a snapshot file."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: filename.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         filepath = self._safe_path(filename)
 
         if filepath is None:
@@ -104,6 +134,11 @@ class SnapshotService:
 
     def delete_snapshot(self, data):
         """Delete a snapshot file."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: data.
+        #  % Side-effects: May change device/file state and update in-memory tracking fields.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         filename = data.get('filename')
         filepath = self._safe_path(filename)
 
@@ -120,6 +155,11 @@ class SnapshotService:
 
     def download_snapshot(self, filename):
         """Download a snapshot file."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Parameters: filename.
+        #  % Side-effects: May change device/file state and update in-memory tracking fields.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
         filepath = self._safe_path(filename)
 
         if filepath is None:
