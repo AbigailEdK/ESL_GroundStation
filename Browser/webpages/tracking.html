@@ -285,7 +285,6 @@
                     <div class="tle-preview">${entry.line1}\n${entry.line2}</div>
                     <div class="button-row">
                         <button type="button" onclick="loadSavedSatellite('${entry.id}')">Load</button>
-                        <button type="button" class="secondary" onclick="fillFromSavedSatellite('${entry.id}')">Fill Form</button>
                         <button type="button" class="secondary" onclick="deleteSavedSatellite('${entry.id}')">Delete</button>
                     </div>
                 </div>
@@ -313,6 +312,15 @@
             }
         }
 
+        async function refreshSavedAgeIfPresent(payload) {
+            try {
+                await postControl('/api/tle-library/mark-loaded', payload);
+                await loadSavedSatellites();
+            } catch (_err) {
+                // Ignore when this TLE has not been saved yet.
+            }
+        }
+
         async function loadSavedSatellite(id) {
             try {
                 const data = await postControl('/api/tle-library/load-saved', { id });
@@ -336,20 +344,6 @@
             }
         }
 
-        async function fillFromSavedSatellite(id) {
-            try {
-                const entries = await fetchJson('/api/tle-library/saved');
-                const entry = entries.find(item => String(item.id) === String(id));
-                if (!entry) {
-                    throw new Error('Saved satellite not found');
-                }
-                setTleFields(entry);
-                setTleStatus(`Form filled with ${entry.name}`);
-            } catch (err) {
-                setTleStatus(`Fill failed: ${err.message}`, true);
-            }
-        }
-
         function renderPublicSearchResults(results) {
             const container = document.getElementById('public-search-results');
             if (!results.length) {
@@ -367,7 +361,6 @@
                     <div class="button-row">
                         <button type="button" onclick="loadPublicSearchResult(${index})">Load</button>
                         <button type="button" class="secondary" onclick="savePublicSearchResult(${index})">Save</button>
-                        <button type="button" class="secondary" onclick="fillPublicSearchResult(${index})">Fill Form</button>
                     </div>
                 </div>
             `).join('');
@@ -404,6 +397,7 @@
                 setTleFields(entry);
                 const data = await postControl('/api/control/load-tle', entry);
                 setTleStatus(`Public TLE loaded: ${data.message}`);
+                await refreshSavedAgeIfPresent(entry);
             } catch (err) {
                 setTleStatus(`Public load failed: ${err.message}`, true);
             }
@@ -425,22 +419,12 @@
             }
         }
 
-        function fillPublicSearchResult(index) {
-            const entry = publicSearchResults[index];
-            if (!entry) {
-                setPublicSearchStatus('Selected public result is no longer available.', true);
-                return;
-            }
-            setTleFields(entry);
-            setTleStatus(`Form filled with public result ${entry.name}`);
-        }
-
         async function loadTle() {
             try {
                 const payload = getTlePayload();
                 const data = await postControl('/api/control/load-tle', payload);
                 setTleStatus(`TLE loaded: ${data.message}`);
-                await loadSavedSatellites();
+                await refreshSavedAgeIfPresent(payload);
             } catch (err) {
                 setTleStatus(`Load failed: ${err.message}`, true);
             }
@@ -458,7 +442,7 @@
                     refresh_rate_hz: Number.isFinite(refreshRateHz) ? refreshRateHz : 1.0,
                 });
                 setTleStatus(`Standalone tracking: ${data.message}`);
-                await loadSavedSatellites();
+                await refreshSavedAgeIfPresent(payload);
             } catch (err) {
                 setTleStatus(`Start failed: ${err.message}`, true);
             }

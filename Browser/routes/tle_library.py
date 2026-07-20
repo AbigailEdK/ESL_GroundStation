@@ -45,6 +45,15 @@ def create_tle_library_blueprint(tle_library_service):
         #  % ------------------------------------------------------------
         return tle_library_service.load_saved(request.json or {})
 
+    @blueprint.route('/mark-loaded', methods=['POST'])
+    def mark_loaded():
+        #  % ------------------------------------------------------------
+        #  % Inputs: JSON payload with name and TLE lines for an already-saved entry.
+        #  % Side-effects: Updates the saved entry's last-loaded timestamp when the same TLE is loaded elsewhere.
+        #  % Returns: Success JSON indicating whether a saved entry was updated.
+        #  % ------------------------------------------------------------
+        return tle_library_service.mark_loaded(request.json or {})
+
     @blueprint.route('/search-public')
     def search_public():
         #  % ------------------------------------------------------------

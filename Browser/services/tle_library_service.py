@@ -170,6 +170,29 @@ class TleLibraryService:
             }
         )
 
+    def mark_loaded(self, data):
+        name = (data.get('name') or '').strip()
+        line1 = (data.get('line1') or '').strip()
+        line2 = (data.get('line2') or '').strip()
+        if not name or not line1 or not line2:
+            return jsonify({'status': 'error', 'message': 'name, line1, and line2 are required'}), 400
+
+        entries = self._read_entries()
+        entry = next((item for item in entries if self._match_entry(item, data)), None)
+        if entry is None:
+            return jsonify({'status': 'ok', 'message': 'Matching saved satellite not found', 'updated': False})
+
+        entry['last_loaded_utc'] = self._utc_now_iso()
+        self._write_entries(entries)
+        return jsonify(
+            {
+                'status': 'ok',
+                'message': 'Saved satellite age updated',
+                'updated': True,
+                'entry': self._serialize_entry(entry),
+            }
+        )
+
     @staticmethod
     def _parse_tle_response(text):
         lines = [line.strip() for line in text.splitlines() if line.strip()]
