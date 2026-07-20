@@ -118,11 +118,6 @@
             color: #999;
             padding: 12px 0;
         }
-        .passes-table { width: 100%; border-collapse: collapse; }
-        .passes-table th, .passes-table td { padding: 12px; text-align: left; border-bottom: 1px solid #444; }
-        .passes-table th { background: #444; font-weight: bold; color: #fff; }
-        .passes-table tbody tr:hover { background: #333; }
-        .passes-table td { color: #ccc; }
         @media (max-width: 768px) {
             .form-grid { grid-template-columns: 1fr; }
         }
@@ -162,10 +157,10 @@
                 </div>
             </div>
             <div class="button-row">
-                <button type="button" onclick="loadTle()">Load TLE</button>
-                <button type="button" onclick="saveCurrentTle()">Save TLE</button>
-                <button type="button" onclick="startStandalone()">Start Standalone Tracking</button>
-                <button type="button" class="secondary" onclick="stopStandalone()">Stop Standalone Tracking</button>
+                <button type="button" title="Load the entered TLE into the active controller without saving it" onclick="loadTle()">Load TLE</button>
+                <button type="button" title="Save the entered TLE to the satellite library" onclick="saveCurrentTle()">Save TLE</button>
+                <button type="button" title="Start autonomous tracking using the loaded TLE" onclick="startStandalone()">Start Standalone Tracking</button>
+                <button type="button" class="secondary" title="Stop autonomous tracking and return to idle" onclick="stopStandalone()">Stop Standalone Tracking</button>
             </div>
             <div class="status-banner" id="tle-status">No TLE action performed yet.</div>
         </div>
@@ -173,7 +168,7 @@
         <div class="card">
             <h2>Saved Satellites</h2>
             <div class="button-row">
-                <button type="button" class="secondary" onclick="loadSavedSatellites()">Refresh Saved List</button>
+                <button type="button" class="secondary" title="Reload the saved satellite list" onclick="loadSavedSatellites()">Refresh Saved List</button>
             </div>
             <div class="list-stack" id="saved-satellites-list">
                 <div class="empty-state">No saved satellites yet.</div>
@@ -187,7 +182,7 @@
                     <label for="public-search-query">Satellite Search</label>
                     <input type="text" id="public-search-query" placeholder="e.g. ISS, NOAA, METEOR">
                 </div>
-                <button type="button" onclick="searchPublicSatellites()">Search Public TLEs</button>
+                <button type="button" title="Search the public TLE catalog for matching satellites" onclick="searchPublicSatellites()">Search Public TLEs</button>
             </div>
             <div class="status-banner" id="public-search-status">Search public satellites by name.</div>
             <div class="list-stack" id="public-search-results">
@@ -195,23 +190,6 @@
             </div>
         </div>
         
-        <div class="card">
-            <h2>Upcoming Passes</h2>
-            <table class="passes-table">
-                <thead>
-                    <tr>
-                        <th>Satellite</th>
-                        <th>Rise Time</th>
-                        <th>Max Elevation</th>
-                        <th>Set Time</th>
-                        <th>Duration (min)</th>
-                    </tr>
-                </thead>
-                <tbody id="passes-list">
-                    <tr><td colspan="5">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
     </div>
 
     <script>
@@ -284,8 +262,8 @@
                     </div>
                     <div class="tle-preview">${entry.line1}\n${entry.line2}</div>
                     <div class="button-row">
-                        <button type="button" onclick="loadSavedSatellite('${entry.id}')">Load</button>
-                        <button type="button" class="secondary" onclick="deleteSavedSatellite('${entry.id}')">Delete</button>
+                        <button type="button" title="Load this saved TLE into the controller" onclick="loadSavedSatellite('${entry.id}')">Load</button>
+                        <button type="button" class="secondary" title="Delete this satellite from the saved library" onclick="deleteSavedSatellite('${entry.id}')">Delete</button>
                     </div>
                 </div>
             `).join('');
@@ -359,8 +337,8 @@
                     </div>
                     <div class="tle-preview">${entry.line1}\n${entry.line2}</div>
                     <div class="button-row">
-                        <button type="button" onclick="loadPublicSearchResult(${index})">Load</button>
-                        <button type="button" class="secondary" onclick="savePublicSearchResult(${index})">Save</button>
+                        <button type="button" title="Load this public TLE into the controller" onclick="loadPublicSearchResult(${index})">Load</button>
+                        <button type="button" class="secondary" title="Save this public TLE to the satellite library" onclick="savePublicSearchResult(${index})">Save</button>
                     </div>
                 </div>
             `).join('');
@@ -461,19 +439,11 @@
             try {
                 const response = await fetch('/api/upcoming-passes');
                 const passes = await response.json();
-                const tbody = document.getElementById('passes-list');
-                tbody.innerHTML = passes.map(pass => `
-                    <tr>
-                        <td>${pass.satellite}</td>
-                        <td>${pass.rise_time}</td>
-                        <td>${pass.max_elevation}°</td>
-                        <td>${pass.set_time}</td>
-                        <td>${pass.duration}</td>
-                    </tr>
-                `).join('');
+                if (passes.length === 0) {
+                    return;
+                }
             } catch (_err) {
-                document.getElementById('passes-list').innerHTML =
-                    '<tr><td colspan="5">Unable to load pass predictions.</td></tr>';
+                return;
             }
         }
         loadSavedSatellites();

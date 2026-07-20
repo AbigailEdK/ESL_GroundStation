@@ -75,6 +75,36 @@
             text-transform: uppercase;
             letter-spacing: 1px;
         }
+
+        .card.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .passes-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .passes-table th,
+        .passes-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+
+        .passes-table th {
+            background: #444;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .passes-table tbody tr:hover {
+            background: #333;
+        }
+
+        .passes-table td {
+            color: #ccc;
+        }
     </style>
 </head>
 
@@ -116,6 +146,24 @@
                 <div class="metric" id="datarate">--</div>
             </div>
         </div>
+
+        <div class="card full-width">
+            <div class="label">Upcoming Passes</div>
+            <table class="passes-table">
+                <thead>
+                    <tr>
+                        <th>Satellite</th>
+                        <th>Rise Time</th>
+                        <th>Max Elevation</th>
+                        <th>Set Time</th>
+                        <th>Duration (min)</th>
+                    </tr>
+                </thead>
+                <tbody id="passes-list">
+                    <tr><td colspan="5">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
@@ -129,8 +177,37 @@
             document.getElementById('status').textContent = data.communication_status;
             document.getElementById('datarate').textContent = data.data_rate + ' bps';
         }
+
+        async function loadPasses() {
+            try {
+                const response = await fetch('/api/upcoming-passes');
+                const passes = await response.json();
+                const tbody = document.getElementById('passes-list');
+
+                if (!passes.length) {
+                    tbody.innerHTML = '<tr><td colspan="5">No passes available yet.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = passes.map(pass => `
+                    <tr>
+                        <td>${pass.satellite}</td>
+                        <td>${pass.rise_time}</td>
+                        <td>${pass.max_elevation ?? '--'}°</td>
+                        <td>${pass.set_time ?? '--'}</td>
+                        <td>${pass.duration ?? '--'}</td>
+                    </tr>
+                `).join('');
+            } catch (_err) {
+                document.getElementById('passes-list').innerHTML =
+                    '<tr><td colspan="5">Unable to load pass predictions.</td></tr>';
+            }
+        }
+
         updateDashboard();
+        loadPasses();
         setInterval(updateDashboard, 2000);
+        setInterval(loadPasses, 30000);
     </script>
 </body>
 

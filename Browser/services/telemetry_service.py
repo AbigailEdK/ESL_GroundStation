@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import jsonify
 
@@ -97,22 +97,62 @@ class TelemetryService:
         #  % Returns: The function result for the caller (type depends on operation).
         #  % ------------------------------------------------------------
         state = self._controller_state()
-        satellite = state.get('satellite_name')
-        if not satellite:
+        satellite_name = state.get('satellite_name')
+        controller = self.controller
+        tracker = getattr(controller, 'tracker', None) if controller is not None else None
+        satellite = getattr(tracker, 'satellite', None) if tracker is not None else None
+        observer = getattr(tracker, 'observer', None) if tracker is not None else None
+        ts = getattr(tracker, 'ts', None) if tracker is not None else None
+
+        if not satellite_name or tracker is None or satellite is None or observer is None or ts is None:
             return jsonify([])
 
-        if state.get('is_visible'):
-            now = datetime.now()
-            pass_hint = {
-                'satellite': satellite,
-                'rise_time': now.strftime('%Y-%m-%d %H:%M:%S'),
-                'max_elevation': state.get('target_elevation'),
-                'set_time': (now + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S'),
-                'duration': 10,
-            }
-            return jsonify([pass_hint])
+        max_search_hours = float(self.settings.get('pass_search_hours', 24.0))
+        min_elevation = float(self.settings.get('pass_min_elevation_deg', 10.0))
+        now_utc = datetime.now(timezone.utc)
+        t0 = ts.from_datetime(now_utc)
+        t1 = ts.from_datetime(now_utc + timedelta(hours=max_search_hours))
 
-        return jsonify([])
+        try:
+            t_events, events = satellite.find_events(observer, t0, t1, altitude_degrees=min_elevation)
+        except Exception:
+            return jsonify([])
+
+        upcoming_passes = []
+        current_pass = None
+
+        for t_event, event in zip(t_events, events):
+            event_time = t_event.utc_datetime()
+
+            if event == 0:
+                current_pass = {
+                    'satellite': satellite_name,
+                    'rise_time': event_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'max_elevation': None,
+                    'max_elevation_time': None,
+                    'set_time': None,
+                    'duration': None,
+                }
+            elif event == 1 and current_pass is not None:
+                azimuth, elevation, _, _ = tracker.get_position(event_time)
+                current_pass['max_elevation'] = round(elevation, 1)
+                current_pass['max_elevation_time'] = event_time.strftime('%Y-%m-%d %H:%M:%S')
+                current_pass['peak_azimuth'] = round(azimuth, 1)
+            elif event == 2 and current_pass is not None:
+                current_pass['set_time'] = event_time.strftime('%Y-%m-%d %H:%M:%S')
+                rise_dt = datetime.strptime(current_pass['rise_time'], '%Y-%m-%d %H:%M:%S').replace(
+                    tzinfo=timezone.utc
+                )
+                duration_minutes = (event_time - rise_dt).total_seconds() / 60.0
+                current_pass['duration'] = round(duration_minutes, 1)
+                if current_pass.get('max_elevation') is None:
+                    azimuth, elevation, _, _ = tracker.get_position(event_time)
+                    current_pass['max_elevation'] = round(elevation, 1)
+                    current_pass['peak_azimuth'] = round(azimuth, 1)
+                upcoming_passes.append(current_pass)
+                current_pass = None
+
+        return jsonify(upcoming_passes)
 
     def receiver_config(self):
         """Return receiver configuration."""

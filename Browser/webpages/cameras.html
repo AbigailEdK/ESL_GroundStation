@@ -239,7 +239,7 @@
                     <option value="hls">HLS Stream</option>
                 </select>
             </div>
-            <button onclick="addCamera()">Add Camera</button>
+            <button title="Add a new camera entry" onclick="addCamera()">Add Camera</button>
         </div>
     </div>
 
@@ -278,15 +278,15 @@
                             <span class="camera-status ${cam.status}"></span>
                             ${cam.name}
                         </span>
-                        <button onclick="deleteCamera(${cam.id})" style="background: #f44336; padding: 4px 8px;">✕</button>
+                        <button title="Remove this camera" onclick="deleteCamera(${cam.id})" style="background: #f44336; padding: 4px 8px;">✕</button>
                     </div>
                     <div class="camera-stream" id="stream-${cam.id}">
                         ${renderStream(cam)}
                     </div>
                     <div class="camera-controls">
-                        <button id="record-btn-${cam.id}" class="record" onclick="toggleRecord(${cam.id})">🔴 Record</button>
-                        <button onclick="takeSnapshot(${cam.id})">📸 Snapshot</button>
-                        <button onclick="refreshStream(${cam.id})">🔄 Refresh</button>
+                        <button id="record-btn-${cam.id}" class="record" title="Start or stop recording for this camera" onclick="toggleRecord(${cam.id})">🔴 Record</button>
+                        <button title="Capture a still snapshot from this camera" onclick="takeSnapshot(${cam.id})">📸 Snapshot</button>
+                        <button title="Reload the live stream for this camera" onclick="refreshStream(${cam.id})">🔄 Refresh</button>
                     </div>
                     <div class="camera-info">
                         <div class="info-item">
@@ -483,8 +483,8 @@
                                     <td>${new Date(rec.created).toLocaleString()}</td>
                                     <td>
                                         <div class="recording-actions">
-                                            <button onclick="downloadRecording('${rec.filename}')">⬇️ Download</button>
-                                            <button style="background: #f44336;" onclick="deleteRecording('${rec.filename}')">🗑️ Delete</button>
+                                            <button title="Download this recording" onclick="downloadRecording('${rec.filename}')">⬇️ Download</button>
+                                            <button style="background: #f44336;" title="Delete this recording" onclick="deleteRecording('${rec.filename}')">🗑️ Delete</button>
                                         </div>
                                     </td>
                                 </tr>

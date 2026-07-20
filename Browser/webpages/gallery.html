@@ -273,9 +273,9 @@
         </div>
 
         <div class="controls">
-            <button onclick="loadSnapshots()">🔄 Refresh</button>
-            <button class="secondary" onclick="deleteAllSnapshots()">🗑️ Delete All</button>
-            <button class="secondary" onclick="downloadAllSnapshots()">⬇️ Download All</button>
+            <button title="Reload the snapshot gallery" onclick="loadSnapshots()">🔄 Refresh</button>
+            <button class="secondary" title="Delete every saved snapshot" onclick="deleteAllSnapshots()">🗑️ Delete All</button>
+            <button class="secondary" title="Download all snapshots as an archive" onclick="downloadAllSnapshots()">⬇️ Download All</button>
             <div class="filter-group">
                 <label>Filter by Camera:</label>
                 <select id="camera-filter" onchange="filterSnapshots()">
@@ -368,8 +368,8 @@
                         </div>
                     </div>
                     <div class="snapshot-actions">
-                        <button class="download" onclick="downloadSnapshot('${snap.filename}')">⬇️ Download</button>
-                        <button class="delete" onclick="deleteSnapshot('${snap.filename}')">🗑️ Delete</button>
+                        <button class="download" title="Download this snapshot" onclick="downloadSnapshot('${snap.filename}')">⬇️ Download</button>
+                        <button class="delete" title="Delete this snapshot" onclick="deleteSnapshot('${snap.filename}')">🗑️ Delete</button>
                     </div>
                 </div>
             `).join('');
