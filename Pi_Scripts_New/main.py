@@ -384,17 +384,6 @@ def main():
                     requested_mode = physical_mode
                 else:
                     requested_mode = browser_mode if mode_owner == 'browser' else physical_mode
-                    try:
-                        _api_post(
-                            '/api/control/set-mode',
-                            {
-                                'mode': requested_mode,
-                                'owner': mode_owner,
-                                'hardware_mode': physical_mode,
-                            },
-                        )
-                    except Exception:
-                        pass
 
                 last_hardware_mode = physical_mode
                 if requested_mode != active_mode:

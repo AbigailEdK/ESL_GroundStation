@@ -259,6 +259,57 @@
 
     <script>
         let modeToggleSyncing = false;
+        const MODE_PREF_KEY = 'gs_requested_mode';
+
+        function loadModePreference() {
+            try {
+                const saved = localStorage.getItem(MODE_PREF_KEY);
+                return (saved === 'standalone') ? 'standalone' : 'mcs';
+            } catch (_err) {
+                return 'mcs';
+            }
+        }
+
+        function saveModePreference(mode) {
+            try {
+                localStorage.setItem(MODE_PREF_KEY, mode === 'standalone' ? 'standalone' : 'mcs');
+            } catch (_err) {
+                // Ignore storage failures.
+            }
+        }
+
+        function initializeModeToggleFromPreference() {
+            const preferredMode = loadModePreference();
+            modeToggleSyncing = true;
+            document.getElementById('mode-toggle').checked = preferredMode === 'standalone';
+            modeToggleSyncing = false;
+            renderModeStatus('browser', preferredMode, '--');
+        }
+
+        function normalizeMode(mode) {
+            const value = String(mode || '').trim().toLowerCase();
+            if (value === 'standalone') {
+                return 'standalone';
+            }
+            return 'mcs';
+        }
+
+        function normalizeOwner(owner) {
+            const value = String(owner || '').trim().toLowerCase();
+            if (value === 'hardware' || value === 'browser') {
+                return value;
+            }
+            return 'browser';
+        }
+
+        function renderModeStatus(owner, effectiveMode, hardwareMode) {
+            const ownerText = normalizeOwner(owner).toUpperCase();
+            const effectiveText = normalizeMode(effectiveMode).toUpperCase();
+            const hardwareRaw = String(hardwareMode || '--').trim();
+            const hardwareText = hardwareRaw ? hardwareRaw.toUpperCase() : '--';
+            document.getElementById('mode-owner-status').textContent =
+                `Owner: ${ownerText} | Effective mode: ${effectiveText} | Hardware: ${hardwareText}`;
+        }
 
         async function postControl(path, payload = {}) {
             const response = await fetch(path, {
@@ -279,42 +330,46 @@
             }
             const toggle = document.getElementById('mode-toggle');
             const requestedMode = toggle.checked ? 'standalone' : 'mcs';
+            saveModePreference(requestedMode);
             try {
                 await postControl('/api/control/set-mode', {
                     mode: requestedMode,
                     owner: 'browser',
                 });
+                await updateDashboard();
             } catch (err) {
                 console.error('Mode update failed:', err.message);
             }
         }
 
         function syncModeUI(data) {
-            const effectiveMode = (data.requested_mode || 'mcs').toLowerCase();
-            const modeOwner = data.mode_owner || 'browser';
+            const effectiveMode = normalizeMode(data.requested_mode || loadModePreference());
+            const modeOwner = normalizeOwner(data.mode_owner || 'browser');
             const hardwareMode = data.hardware_mode || '--';
 
             modeToggleSyncing = true;
             document.getElementById('mode-toggle').checked = effectiveMode === 'standalone';
             modeToggleSyncing = false;
-
-            const modeText = effectiveMode.toUpperCase();
-            document.getElementById('mode-owner-status').textContent =
-                `Owner: ${modeOwner.toUpperCase()} | Effective mode: ${modeText} | Hardware: ${String(hardwareMode).toUpperCase()}`;
+            saveModePreference(effectiveMode);
+            renderModeStatus(modeOwner, effectiveMode, hardwareMode);
         }
 
         async function updateDashboard() {
-            const response = await fetch('/api/satellite-status');
-            const data = await response.json();
-            document.getElementById('satellite').textContent = data.satellite_name;
-            document.getElementById('position').textContent = data.azimuth + '° / ' + data.elevation + '°';
-            document.getElementById('measured-position').textContent =
-                (data.actual_azimuth ?? '--') + '° / ' + (data.actual_elevation ?? '--') + '°';
-            document.getElementById('signal').textContent = data.signal_strength + ' dBm';
-            document.getElementById('snr').textContent = data.snr + ' dB';
-            document.getElementById('status').textContent = data.run_state || data.communication_status;
-            document.getElementById('datarate').textContent = data.data_rate + ' bps';
-            syncModeUI(data);
+            try {
+                const response = await fetch('/api/satellite-status');
+                const data = await response.json();
+                document.getElementById('satellite').textContent = data.satellite_name;
+                document.getElementById('position').textContent = data.azimuth + '° / ' + data.elevation + '°';
+                document.getElementById('measured-position').textContent =
+                    (data.actual_azimuth ?? '--') + '° / ' + (data.actual_elevation ?? '--') + '°';
+                document.getElementById('signal').textContent = data.signal_strength + ' dBm';
+                document.getElementById('snr').textContent = data.snr + ' dB';
+                document.getElementById('status').textContent = data.run_state || data.communication_status;
+                document.getElementById('datarate').textContent = data.data_rate + ' bps';
+                syncModeUI(data);
+            } catch (_err) {
+                renderModeStatus('browser', loadModePreference(), '--');
+            }
         }
 
         async function loadPasses() {
@@ -343,6 +398,7 @@
             }
         }
 
+        initializeModeToggleFromPreference();
         updateDashboard();
         loadPasses();
         setInterval(updateDashboard, 2000);
