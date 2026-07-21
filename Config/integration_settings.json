@@ -37,5 +37,14 @@
         "pull_resistor": "none",
         "standalone_when_low": false,
         "default_mode": "mcs"
+    },
+    "ui": {
+        "update_interval_seconds": 2,
+        "theme": "dark"
+    },
+    "transmitter": {
+        "frequency_mhz": 145.2,
+        "power_output_w": 10.0,
+        "status": "Standby"
     }
 }

@@ -17,12 +17,20 @@ import sys
 from routes import (
     create_control_blueprint,
     create_recording_blueprint,
+    create_settings_blueprint,
     create_snapshots_blueprint,
     create_telemetry_blueprint,
     create_tle_library_blueprint,
     create_ui_blueprint,
 )
-from services import ControlService, RecordingService, SnapshotService, TelemetryService, TleLibraryService
+from services import (
+    ControlService,
+    RecordingService,
+    SettingsService,
+    SnapshotService,
+    TelemetryService,
+    TleLibraryService,
+)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 if PROJECT_ROOT not in sys.path:
@@ -108,6 +116,9 @@ class WebManagerApp:
             ),
             controller=self.controller,
         )
+        self.settings_service = SettingsService(
+            os.path.join(PROJECT_ROOT, 'Config', 'integration_settings.json')
+        )
 
         self._register_blueprints()
 
@@ -149,6 +160,9 @@ class WebManagerApp:
         )
         self.app.register_blueprint(
             create_tle_library_blueprint(self.tle_library_service)
+        )
+        self.app.register_blueprint(
+            create_settings_blueprint(self.settings_service)
         )
 
 

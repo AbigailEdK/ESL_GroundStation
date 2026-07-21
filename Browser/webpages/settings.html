@@ -53,6 +53,15 @@
             color: #00d4ff;
             font-size: 18px;
         }
+        .status-banner {
+            margin-bottom: 20px;
+            padding: 12px 14px;
+            border-radius: 4px;
+            background: #2a2a2a;
+            border-left: 4px solid #00d4ff;
+            color: #ddd;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -67,19 +76,20 @@
 
     <div class="content">
         <h1>⚙️ Settings</h1>
+        <div class="status-banner" id="settings-status">Settings are loaded from integration settings.</div>
         
         <div class="settings-section">
             <h2>General Settings</h2>
-            <form>
+            <form id="general-settings-form">
                 <div class="form-group">
-                    <label>Update Interval (seconds)</label>
-                    <input type="number" value="2" min="1">
+                    <label for="update-interval">Update Interval (seconds)</label>
+                    <input type="number" id="update-interval" value="2" min="1">
                 </div>
                 <div class="form-group">
-                    <label>Theme</label>
-                    <select>
-                        <option>Dark (Current)</option>
-                        <option>Light</option>
+                    <label for="theme-select">Theme</label>
+                    <select id="theme-select">
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
                     </select>
                 </div>
                 <button type="submit" title="Save the general settings">Save Settings</button>
@@ -88,22 +98,22 @@
 
         <div class="settings-section">
             <h2>Receiver Configuration</h2>
-            <form>
+            <form id="receiver-settings-form">
                 <div class="form-group">
-                    <label>Frequency (MHz)</label>
-                    <input type="number" value="145.800" step="0.001">
+                    <label for="receiver-frequency">Frequency (MHz)</label>
+                    <input type="number" id="receiver-frequency" value="145.800" step="0.001">
                 </div>
                 <div class="form-group">
-                    <label>Modulation</label>
-                    <select>
-                        <option>FM</option>
-                        <option>AM</option>
-                        <option>SSB</option>
+                    <label for="receiver-modulation">Modulation</label>
+                    <select id="receiver-modulation">
+                        <option value="FM">FM</option>
+                        <option value="AM">AM</option>
+                        <option value="SSB">SSB</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Bandwidth (kHz)</label>
-                    <input type="number" value="25" min="1">
+                    <label for="receiver-bandwidth">Bandwidth (kHz)</label>
+                    <input type="number" id="receiver-bandwidth" value="25" min="0.1" step="0.1">
                 </div>
                 <button type="submit" title="Save the receiver configuration">Save Receiver Config</button>
             </form>
@@ -111,20 +121,20 @@
 
         <div class="settings-section">
             <h2>Transmitter Configuration</h2>
-            <form>
+            <form id="transmitter-settings-form">
                 <div class="form-group">
-                    <label>Frequency (MHz)</label>
-                    <input type="number" value="145.200" step="0.001">
+                    <label for="transmitter-frequency">Frequency (MHz)</label>
+                    <input type="number" id="transmitter-frequency" value="145.200" step="0.001">
                 </div>
                 <div class="form-group">
-                    <label>Power Output (Watts)</label>
-                    <input type="number" value="10" min="1">
+                    <label for="transmitter-power">Power Output (Watts)</label>
+                    <input type="number" id="transmitter-power" value="10" min="0" step="0.1">
                 </div>
                 <div class="form-group">
-                    <label>Status</label>
-                    <select>
-                        <option>Standby</option>
-                        <option>Active</option>
+                    <label for="transmitter-status">Status</label>
+                    <select id="transmitter-status">
+                        <option value="Standby">Standby</option>
+                        <option value="Active">Active</option>
                     </select>
                 </div>
                 <button type="submit" title="Save the transmitter configuration">Save Transmitter Config</button>
@@ -133,13 +143,112 @@
     </div>
 
     <script>
-        // Save settings to localStorage
-        document.querySelectorAll('form').forEach(form => {
-            form.addEventListener('submit', (e) => {
-                e.preventDefault();
-                alert('Settings saved!');
+        function setStatus(message, isError = false) {
+            const banner = document.getElementById('settings-status');
+            banner.textContent = message;
+            banner.style.borderLeftColor = isError ? '#ff6b6b' : '#00d4ff';
+        }
+
+        async function postJson(path, payload) {
+            const response = await fetch(path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
             });
+            const data = await response.json();
+            if (!response.ok || data.status === 'error') {
+                throw new Error(data.message || `Request failed with status ${response.status}`);
+            }
+            return data;
+        }
+
+        async function fetchSettings() {
+            const response = await fetch('/api/settings');
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+            return response.json();
+        }
+
+        function applySettings(settings) {
+            const ui = settings.ui || {};
+            const receiver = settings.receiver || {};
+            const transmitter = settings.transmitter || {};
+            const telemetry = settings.telemetry || {};
+
+            document.getElementById('update-interval').value = ui.update_interval_seconds ?? 2;
+            document.getElementById('theme-select').value = (ui.theme || 'dark').toLowerCase();
+
+            document.getElementById('receiver-frequency').value =
+                receiver.frequency_mhz ?? telemetry.frequency_mhz ?? 145.8;
+            document.getElementById('receiver-modulation').value =
+                String(receiver.modulation || 'FM').toUpperCase();
+            document.getElementById('receiver-bandwidth').value = receiver.bandwidth_khz ?? 25;
+
+            document.getElementById('transmitter-frequency').value =
+                transmitter.frequency_mhz ?? telemetry.tx_frequency_mhz ?? 145.2;
+            document.getElementById('transmitter-power').value = transmitter.power_output_w ?? 10;
+            document.getElementById('transmitter-status').value = transmitter.status || 'Standby';
+        }
+
+        async function loadAndApplySettings() {
+            try {
+                const settings = await fetchSettings();
+                applySettings(settings);
+                setStatus('Settings loaded from integration settings JSON.');
+            } catch (err) {
+                setStatus(`Failed to load settings: ${err.message}`, true);
+            }
+        }
+
+        document.getElementById('general-settings-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const payload = {
+                    update_interval_seconds: Number(document.getElementById('update-interval').value),
+                    theme: document.getElementById('theme-select').value,
+                };
+                const data = await postJson('/api/settings/general', payload);
+                applySettings(data.settings || {});
+                setStatus(data.message || 'General settings saved.');
+            } catch (err) {
+                setStatus(`Failed to save general settings: ${err.message}`, true);
+            }
         });
+
+        document.getElementById('receiver-settings-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const payload = {
+                    frequency_mhz: Number(document.getElementById('receiver-frequency').value),
+                    modulation: document.getElementById('receiver-modulation').value,
+                    bandwidth_khz: Number(document.getElementById('receiver-bandwidth').value),
+                };
+                const data = await postJson('/api/settings/receiver', payload);
+                applySettings(data.settings || {});
+                setStatus(data.message || 'Receiver settings saved.');
+            } catch (err) {
+                setStatus(`Failed to save receiver settings: ${err.message}`, true);
+            }
+        });
+
+        document.getElementById('transmitter-settings-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                const payload = {
+                    frequency_mhz: Number(document.getElementById('transmitter-frequency').value),
+                    power_output_w: Number(document.getElementById('transmitter-power').value),
+                    status: document.getElementById('transmitter-status').value,
+                };
+                const data = await postJson('/api/settings/transmitter', payload);
+                applySettings(data.settings || {});
+                setStatus(data.message || 'Transmitter settings saved.');
+            } catch (err) {
+                setStatus(`Failed to save transmitter settings: ${err.message}`, true);
+            }
+        });
+
+        loadAndApplySettings();
     </script>
 </body>
 </html>
