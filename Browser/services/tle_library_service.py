@@ -13,9 +13,14 @@ class TleLibraryService:
     #  % Side-effects: Persists saved satellites, computes age metadata, and proxies public TLE search results.
     #  % Returns: Service object used by Flask routes for saved/public TLE workflows.
     #  % ------------------------------------------------------------
-    def __init__(self, library_path, controller=None):
+    def __init__(self, library_path, controller=None, integration_settings_path=None):
         self.library_path = os.path.abspath(os.path.expanduser(library_path))
         self.controller = controller
+        self.integration_settings_path = (
+            os.path.abspath(os.path.expanduser(integration_settings_path))
+            if integration_settings_path
+            else None
+        )
         library_dir = os.path.dirname(self.library_path)
         if library_dir:
             os.makedirs(library_dir, exist_ok=True)
@@ -34,6 +39,25 @@ class TleLibraryService:
     def _write_entries(self, entries):
         with open(self.library_path, 'w', encoding='utf-8') as file:
             json.dump(entries, file, indent=2)
+
+    def _read_integration_settings(self):
+        if not self.integration_settings_path:
+            return {}
+        try:
+            with open(self.integration_settings_path, 'r', encoding='utf-8') as file:
+                payload = json.load(file)
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
+
+    def _write_integration_settings(self, payload):
+        if not self.integration_settings_path:
+            return
+        settings_dir = os.path.dirname(self.integration_settings_path)
+        if settings_dir:
+            os.makedirs(settings_dir, exist_ok=True)
+        with open(self.integration_settings_path, 'w', encoding='utf-8') as file:
+            json.dump(payload, file, indent=4)
 
     @staticmethod
     def _utc_now_iso():
@@ -250,6 +274,48 @@ class TleLibraryService:
         if not_found:
             message += f'; no match for {", ".join(not_found[:5])}'
         return jsonify({'status': 'ok', 'message': message, 'updated': updated_count, 'not_found': not_found})
+
+    def get_last_tracked(self):
+        payload = self._read_integration_settings()
+        last = payload.get('last_tracked_satellite', {})
+        if not isinstance(last, dict):
+            last = {}
+        return jsonify(
+            {
+                'status': 'ok',
+                'last_tracked_satellite': {
+                    'name': (last.get('name') or '').strip(),
+                    'line1': (last.get('line1') or '').strip(),
+                    'line2': (last.get('line2') or '').strip(),
+                    'updated_utc': last.get('updated_utc'),
+                },
+            }
+        )
+
+    def set_last_tracked(self, data):
+        name = (data.get('name') or '').strip()
+        line1 = (data.get('line1') or '').strip()
+        line2 = (data.get('line2') or '').strip()
+        if not name or not line1 or not line2:
+            return jsonify({'status': 'error', 'message': 'name, line1, and line2 are required'}), 400
+
+        payload = self._read_integration_settings()
+        payload['last_tracked_satellite'] = {
+            'name': name,
+            'line1': line1,
+            'line2': line2,
+            'updated_utc': self._utc_now_iso(),
+        }
+
+        # Keep standalone section aligned for startup defaults.
+        standalone = payload.setdefault('standalone', {})
+        if isinstance(standalone, dict):
+            standalone['name'] = name
+            standalone['line1'] = line1
+            standalone['line2'] = line2
+
+        self._write_integration_settings(payload)
+        return jsonify({'status': 'ok', 'message': 'Last tracked satellite saved'})
 
     @staticmethod
     def _parse_tle_response(text):

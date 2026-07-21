@@ -81,4 +81,22 @@ def create_tle_library_blueprint(tle_library_service):
         #  % ------------------------------------------------------------
         return tle_library_service.update_public_satellites()
 
+    @blueprint.route('/last-tracked')
+    def last_tracked():
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters.
+        #  % Side-effects: Reads persisted last tracked TLE payload from integration settings.
+        #  % Returns: JSON payload containing last tracked satellite fields.
+        #  % ------------------------------------------------------------
+        return tle_library_service.get_last_tracked()
+
+    @blueprint.route('/last-tracked', methods=['POST'])
+    def set_last_tracked():
+        #  % ------------------------------------------------------------
+        #  % Inputs: JSON payload with name and TLE lines.
+        #  % Side-effects: Persists last tracked satellite fields for future page loads.
+        #  % Returns: Success or error JSON payload.
+        #  % ------------------------------------------------------------
+        return tle_library_service.set_last_tracked(request.json or {})
+
     return blueprint

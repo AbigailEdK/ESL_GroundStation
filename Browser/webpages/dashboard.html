@@ -69,6 +69,32 @@
             margin: 15px 0;
         }
 
+        .metric-source {
+            color: #9aa0a6;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-top: -6px;
+        }
+
+        .satellite-status {
+            color: #bbb;
+            font-size: 13px;
+            margin-top: -8px;
+        }
+
+        .metric-source.live {
+            color: #40c97c;
+        }
+
+        .metric-source.predicted {
+            color: #f2b84b;
+        }
+
+        .metric-source.unavailable {
+            color: #9aa0a6;
+        }
+
         .label {
             color: #aaa;
             font-size: 14px;
@@ -211,30 +237,17 @@
             <div class="card">
                 <div class="label">Satellite</div>
                 <div class="metric" id="satellite">--</div>
+                <div class="satellite-status" id="satellite-status-text">Status: --</div>
             </div>
             <div class="card">
                 <div class="label">Target AZ / EL</div>
                 <div class="metric" id="position">-- / --</div>
+                <div class="metric-source" id="target-source">Source: --</div>
             </div>
             <div class="card">
                 <div class="label">Measured AZ / EL</div>
                 <div class="metric" id="measured-position">-- / --</div>
-            </div>
-            <div class="card">
-                <div class="label">Signal Strength</div>
-                <div class="metric" id="signal">--</div>
-            </div>
-            <div class="card">
-                <div class="label">SNR</div>
-                <div class="metric" id="snr">--</div>
-            </div>
-            <div class="card">
-                <div class="label">Status</div>
-                <div class="metric" id="status">--</div>
-            </div>
-            <div class="card">
-                <div class="label">Data Rate</div>
-                <div class="metric" id="datarate">--</div>
+                <div class="metric-source" id="measured-source">Source: --</div>
             </div>
         </div>
 
@@ -354,21 +367,60 @@
             renderModeStatus(modeOwner, effectiveMode, hardwareMode);
         }
 
+        function formatNumber(value, decimals = 1) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) {
+                return '--';
+            }
+            return num.toFixed(decimals);
+        }
+
+        function formatText(value, fallback = '--') {
+            if (value === null || value === undefined) {
+                return fallback;
+            }
+            const text = String(value).trim();
+            return text.length ? text : fallback;
+        }
+
+        function sourceClass(sourceText) {
+            const source = String(sourceText || '').toLowerCase();
+            if (source.includes('live')) {
+                return 'live';
+            }
+            if (source.includes('predicted')) {
+                return 'predicted';
+            }
+            return 'unavailable';
+        }
+
+        function setSourceBadge(elementId, text) {
+            const node = document.getElementById(elementId);
+            const cleaned = formatText(text, '--');
+            node.textContent = `Source: ${cleaned}`;
+            node.classList.remove('live', 'predicted', 'unavailable');
+            node.classList.add(sourceClass(cleaned));
+        }
+
         async function updateDashboard() {
             try {
                 const response = await fetch('/api/satellite-status');
                 const data = await response.json();
-                document.getElementById('satellite').textContent = data.satellite_name;
-                document.getElementById('position').textContent = data.azimuth + '° / ' + data.elevation + '°';
+                document.getElementById('satellite').textContent = formatText(data.satellite_name, 'No TLE loaded');
+                document.getElementById('position').textContent =
+                    `${formatNumber(data.azimuth, 1)}° / ${formatNumber(data.elevation, 1)}°`;
                 document.getElementById('measured-position').textContent =
-                    (data.actual_azimuth ?? '--') + '° / ' + (data.actual_elevation ?? '--') + '°';
-                document.getElementById('signal').textContent = data.signal_strength + ' dBm';
-                document.getElementById('snr').textContent = data.snr + ' dB';
-                document.getElementById('status').textContent = data.run_state || data.communication_status;
-                document.getElementById('datarate').textContent = data.data_rate + ' bps';
+                    `${formatNumber(data.actual_azimuth, 1)}° / ${formatNumber(data.actual_elevation, 1)}°`;
+                setSourceBadge('target-source', data.target_source);
+                setSourceBadge('measured-source', data.measured_source);
+                document.getElementById('satellite-status-text').textContent =
+                    `Status: ${formatText(data.run_state || data.communication_status, 'Idle')}`;
                 syncModeUI(data);
             } catch (_err) {
                 renderModeStatus('browser', loadModePreference(), '--');
+                setSourceBadge('target-source', '--');
+                setSourceBadge('measured-source', '--');
+                document.getElementById('satellite-status-text').textContent = 'Status: --';
             }
         }
 

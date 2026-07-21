@@ -115,6 +115,7 @@ class WebManagerApp:
                 storage.get('tle_library_path', os.path.join(PROJECT_ROOT, 'Config', 'saved_satellites.json'))
             ),
             controller=self.controller,
+            integration_settings_path=os.path.join(PROJECT_ROOT, 'Config', 'integration_settings.json'),
         )
         self.settings_service = SettingsService(
             os.path.join(PROJECT_ROOT, 'Config', 'integration_settings.json')

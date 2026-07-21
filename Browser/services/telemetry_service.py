@@ -58,21 +58,61 @@ class TelemetryService:
         #  % ------------------------------------------------------------
         state = self._controller_state()
 
-        azimuth = state.get('target_azimuth')
-        elevation = state.get('target_elevation')
+        raw_target_azimuth = state.get('target_azimuth')
+        raw_target_elevation = state.get('target_elevation')
+        azimuth = raw_target_azimuth
+        elevation = raw_target_elevation
+        distance_km = state.get('distance_km')
+        is_visible = state.get('is_visible')
+        predicted_target_used = False
         comm_connected = state.get('uart_connected', False)
         signal_strength = self.settings.get('signal_strength_dbm')
         snr = self.settings.get('snr_db')
         frequency = self.settings.get('frequency_mhz', 145.800)
         data_rate = self.settings.get('data_rate_bps')
 
+        # If standalone loop is not running yet, derive predicted pointing from loaded TLE.
+        controller = self.controller
+        tracker = getattr(controller, 'tracker', None) if controller is not None else None
+        satellite = getattr(tracker, 'satellite', None) if tracker is not None else None
+        if (azimuth is None or elevation is None) and tracker is not None and satellite is not None:
+            try:
+                predicted_az, predicted_el, predicted_dist, predicted_visible = tracker.get_position(
+                    datetime.now(timezone.utc)
+                )
+                if azimuth is None:
+                    azimuth = round(predicted_az, 2)
+                if elevation is None:
+                    elevation = round(predicted_el, 2)
+                if distance_km is None:
+                    distance_km = round(predicted_dist, 2)
+                if is_visible is None:
+                    is_visible = bool(predicted_visible)
+                predicted_target_used = True
+            except Exception:
+                pass
+
+        target_source = 'Unavailable'
+        if raw_target_azimuth is not None and raw_target_elevation is not None:
+            target_source = 'Live (Controller)'
+        elif predicted_target_used:
+            target_source = 'Predicted (TLE)'
+
+        measured_source = 'Live (STM32 feedback)'
+        if state.get('actual_azimuth') is None or state.get('actual_elevation') is None:
+            measured_source = 'Unavailable'
+
         return jsonify(
             {
                 'satellite_name': state.get('satellite_name') or 'ISS (ZARYA)',
                 'azimuth': azimuth,
                 'elevation': elevation,
+                'target_source': target_source,
+                'distance_km': distance_km,
+                'is_visible': is_visible,
                 'actual_azimuth': state.get('actual_azimuth'),
                 'actual_elevation': state.get('actual_elevation'),
+                'measured_source': measured_source,
                 'azimuth_error': state.get('azimuth_error'),
                 'elevation_error': state.get('elevation_error'),
                 'mode': state.get('mode'),

@@ -249,6 +249,29 @@
             document.getElementById('tle-line2').value = payload.line2 || '';
         }
 
+        async function persistLastTracked(payload) {
+            if (!payload || !payload.name || !payload.line1 || !payload.line2) {
+                return;
+            }
+            try {
+                await postControl('/api/tle-library/last-tracked', payload);
+            } catch (_err) {
+                // Non-blocking persistence helper.
+            }
+        }
+
+        async function loadLastTracked() {
+            try {
+                const data = await fetchJson('/api/tle-library/last-tracked');
+                const last = data.last_tracked_satellite || {};
+                if (last.name && last.line1 && last.line2) {
+                    setTleFields(last);
+                }
+            } catch (_err) {
+                // Keep defaults when last tracked payload is unavailable.
+            }
+        }
+
         function renderSavedSatellites(entries) {
             const container = document.getElementById('saved-satellites-list');
             if (!entries.length) {
@@ -322,6 +345,7 @@
                 await postControl('/api/control/load-tle', payload);
                 const data = await postControl('/api/control/start-standalone', {});
                 setTleStatus(`Standalone tracking started: ${data.message}`);
+                await persistLastTracked(payload);
             } catch (err) {
                 setTleStatus(`Run now failed: ${err.message}`, true);
             }
@@ -363,6 +387,7 @@
                 const data = await postControl('/api/tle-library/load-saved', { id });
                 if (data.entry) {
                     setTleFields(data.entry);
+                    await persistLastTracked(data.entry);
                 }
                 setTleStatus(`Saved satellite loaded: ${data.message}`);
                 await loadSavedSatellites();
@@ -434,6 +459,7 @@
                 setTleFields(entry);
                 const data = await postControl('/api/control/load-tle', entry);
                 setTleStatus(`Public TLE loaded: ${data.message}`);
+                await persistLastTracked(entry);
                 await refreshSavedAgeIfPresent(entry);
             } catch (err) {
                 setTleStatus(`Public load failed: ${err.message}`, true);
@@ -461,6 +487,7 @@
                 const payload = getTlePayload();
                 const data = await postControl('/api/control/load-tle', payload);
                 setTleStatus(`TLE loaded: ${data.message}`);
+                await persistLastTracked(payload);
                 await refreshSavedAgeIfPresent(payload);
             } catch (err) {
                 setTleStatus(`Load failed: ${err.message}`, true);
@@ -472,6 +499,7 @@
                 const payload = getTlePayload();
                 if (payload.name && payload.line1 && payload.line2) {
                     await postControl('/api/control/load-tle', payload);
+                    await persistLastTracked(payload);
                 }
 
                 const refreshRateHz = parseFloat(document.getElementById('refresh-rate').value);
@@ -505,6 +533,7 @@
                 return;
             }
         }
+        loadLastTracked();
         loadSavedSatellites();
         loadPasses();
         setInterval(loadPasses, 30000);
