@@ -21,35 +21,76 @@ class UARTComm:
         print(f"UART initialized on {port} at {baudrate} baud")
     
     def send_position(self, azimuth=None, elevation=None):
-        """
-        Send AZ/EL command in fixed 16-byte format: "AZ###.# EL###.#\n"
-        
-        Args:
-            azimuth: Azimuth angle in degrees, or None to skip
-            elevation: Elevation angle in degrees, or None to skip
-        """
+        """Send one AZ line and one EL line using the terminal protocol."""
         #  % ------------------------------------------------------------
         #  % Inputs: Optional azimuth/elevation numeric targets; missing values are encoded as placeholders.
-        #  % Side-effects: Formats command string and writes bytes to serial port.
+        #  % Side-effects: Formats two command lines and writes bytes to serial port.
         #  % Returns: None; command is transmitted over UART.
         #  % ------------------------------------------------------------
-        # Format azimuth 
+        self.send_target_pair(azimuth, elevation)
+
+    def send_line(self, text):
+        """Send one raw text line with a trailing newline if needed."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Text line to send to the serial peer.
+        #  % Side-effects: Writes a newline-terminated payload to the serial port.
+        #  % Returns: None; line is transmitted over UART.
+        #  % ------------------------------------------------------------
+        if text is None:
+            return
+        payload = str(text)
+        if not payload.endswith('\n'):
+            payload += '\n'
+        self.ser.write(payload.encode())
+        print(f"UART TX: {payload.strip()}")
+
+    def send_target_pair(self, azimuth=None, elevation=None, interline_delay=0.02):
+        """Send separate AZ and EL target lines as required by the updated STM32 protocol."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Optional azimuth/elevation numeric targets and a small delay between lines.
+        #  % Side-effects: Sends AZ and EL commands as individual lines over UART.
+        #  % Returns: None; both lines are transmitted over UART.
+        #  % ------------------------------------------------------------
         if azimuth is None:
-            az_str = "AZxxx.x"
+            az_line = 'AZxxx.xx'
         else:
-            az_str = f"AZ{azimuth:05.1f}"
-        
-        # Format elevation 
+            az_line = f'AZ{float(azimuth):06.2f}'
+
         if elevation is None:
-            el_str = "ELxxx.x"
+            el_line = 'ELyyy.yy'
         else:
-            el_str = f"EL{elevation:05.1f}"
-        
-        # Combine: AZ###.# EL###.#\n = 16 bytes total
-        message = f"{az_str} {el_str}\n"
-        
-        self.ser.write(message.encode())
-        print(f"UART TX: {message.strip()}")
+            el_line = f'EL{float(elevation):06.2f}'
+
+        self.send_line(az_line)
+        time.sleep(max(float(interline_delay), 0.0))
+        self.send_line(el_line)
+
+    def send_raw_bytes(self, data):
+        """Write raw bytes to the serial port."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Raw bytes or bytearray payload.
+        #  % Side-effects: Writes the payload directly to the serial port.
+        #  % Returns: Number of bytes written by the serial layer.
+        #  % ------------------------------------------------------------
+        return self.ser.write(data)
+
+    def read_bytes(self, size=1):
+        """Read raw bytes from the serial port without text decoding."""
+        #  % ------------------------------------------------------------
+        #  % Inputs: Number of bytes to read.
+        #  % Side-effects: Reads from the serial port buffer.
+        #  % Returns: Raw bytes object, possibly empty when no data is available.
+        #  % ------------------------------------------------------------
+        return self.ser.read(size)
+
+    @property
+    def in_waiting(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; reads current serial buffer state.
+        #  % Side-effects: None.
+        #  % Returns: Number of pending bytes available to read.
+        #  % ------------------------------------------------------------
+        return self.ser.in_waiting
 
     def read_line(self):
         """Read a single UART line, returning None on timeout/no data."""

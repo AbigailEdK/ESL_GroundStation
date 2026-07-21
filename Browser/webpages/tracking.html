@@ -125,12 +125,12 @@
 </head>
 <body>
     <nav>
-        <a href="/">Dashboard</a>
-        <a href="/tracking">Tracking</a>
-        <a href="/cameras">Cameras</a>
-        <a href="/gallery">Gallery</a>
-        <a href="/settings">Settings</a>
-        <a href="/logs">Logs</a>
+        <a href="/" title="Go to the main dashboard">Dashboard</a>
+        <a href="/tracking" title="Open the satellite tracking page">Tracking</a>
+        <a href="/cameras" title="Open the camera feeds page">Cameras</a>
+        <a href="/gallery" title="Open the snapshot gallery">Gallery</a>
+        <a href="/settings" title="Open the settings page">Settings</a>
+        <a href="/logs" title="Open the system logs">Logs</a>
     </nav>
 
     <div class="content">
@@ -161,14 +161,19 @@
                 <button type="button" title="Save the entered TLE to the satellite library" onclick="saveCurrentTle()">Save TLE</button>
                 <button type="button" title="Start autonomous tracking using the loaded TLE" onclick="startStandalone()">Start Standalone Tracking</button>
                 <button type="button" class="secondary" title="Stop autonomous tracking and return to idle" onclick="stopStandalone()">Stop Standalone Tracking</button>
+                <button type="button" class="secondary" title="Preview the next visible pass for the entered TLE" onclick="previewNextPass()">Preview Next Pass</button>
+                <button type="button" class="secondary" title="Schedule standalone tracking to start at the next pass" onclick="scheduleNextPass()">Schedule Next Pass</button>
+                <button type="button" class="secondary" title="Load the entered TLE and start tracking immediately" onclick="runNow()">Run Now</button>
             </div>
             <div class="status-banner" id="tle-status">No TLE action performed yet.</div>
+            <div class="status-banner" id="pass-status">No pass preview yet.</div>
         </div>
 
         <div class="card">
             <h2>Saved Satellites</h2>
             <div class="button-row">
                 <button type="button" class="secondary" title="Reload the saved satellite list" onclick="loadSavedSatellites()">Refresh Saved List</button>
+                <button type="button" class="secondary" title="Update every saved public satellite with the latest TLE" onclick="updatePublicSatellites()">Update Public Satellites</button>
             </div>
             <div class="list-stack" id="saved-satellites-list">
                 <div class="empty-state">No saved satellites yet.</div>
@@ -276,6 +281,60 @@
             } catch (err) {
                 document.getElementById('saved-satellites-list').innerHTML =
                     `<div class="empty-state">Unable to load saved satellites: ${err.message}</div>`;
+            }
+        }
+
+        async function previewNextPass() {
+            try {
+                const payload = getTlePayload();
+                const data = await postControl('/api/tle-library/preview-pass', payload);
+                if (!data.pass) {
+                    document.getElementById('pass-status').textContent = 'No upcoming pass found for this TLE.';
+                    return;
+                }
+                document.getElementById('pass-status').textContent =
+                    `Next pass: rise ${data.pass.rise_time}, max ${data.pass.max_elevation ?? '--'}°, set ${data.pass.set_time ?? '--'}, duration ${data.pass.duration ?? '--'} min`;
+            } catch (err) {
+                document.getElementById('pass-status').textContent = `Pass preview failed: ${err.message}`;
+            }
+        }
+
+        async function scheduleNextPass() {
+            try {
+                const payload = getTlePayload();
+                const data = await postControl('/api/tle-library/preview-pass', payload);
+                if (!data.pass) {
+                    setTleStatus('No upcoming pass available to schedule.', true);
+                    return;
+                }
+                await postControl('/api/control/schedule-standalone', {
+                    start_utc: `${data.pass.rise_time}Z`,
+                });
+                setTleStatus(`Standalone tracking scheduled for ${data.pass.rise_time} UTC`);
+            } catch (err) {
+                setTleStatus(`Schedule failed: ${err.message}`, true);
+            }
+        }
+
+        async function runNow() {
+            try {
+                const payload = getTlePayload();
+                await postControl('/api/control/load-tle', payload);
+                const data = await postControl('/api/control/start-standalone', {});
+                setTleStatus(`Standalone tracking started: ${data.message}`);
+            } catch (err) {
+                setTleStatus(`Run now failed: ${err.message}`, true);
+            }
+        }
+
+        async function updatePublicSatellites() {
+            try {
+                setTleStatus('Updating public satellites...');
+                const data = await postControl('/api/tle-library/update-public', {});
+                setTleStatus(data.message);
+                await loadSavedSatellites();
+            } catch (err) {
+                setTleStatus(`Update failed: ${err.message}`, true);
             }
         }
 

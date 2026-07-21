@@ -40,7 +40,7 @@ def _load_integration_settings():
     settings_path = os.path.join(PROJECT_ROOT, 'Config', 'integration_settings.json')
     default_settings = {
         'controller': {
-            'auto_connect_uart': True,
+            'auto_connect_uart': False,
             'uart_port': '/dev/serial0',
             'uart_baudrate': 115200,
             'uart_timeout': 0.5,

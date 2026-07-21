@@ -110,12 +110,12 @@
 
 <body>
     <nav>
-        <a href="/">Dashboard</a>
-        <a href="/tracking">Tracking</a>
-        <a href="/cameras">Cameras</a>
-        <a href="/gallery">Gallery</a>
-        <a href="/settings">Settings</a>
-        <a href="/logs">Logs</a>
+        <a href="/" title="Go to the main dashboard">Dashboard</a>
+        <a href="/tracking" title="Open the satellite tracking page">Tracking</a>
+        <a href="/cameras" title="Open the camera feeds page">Cameras</a>
+        <a href="/gallery" title="Open the snapshot gallery">Gallery</a>
+        <a href="/settings" title="Open the settings page">Settings</a>
+        <a href="/logs" title="Open the system logs">Logs</a>
     </nav>
 
     <div class="content">
@@ -126,8 +126,12 @@
                 <div class="metric" id="satellite">--</div>
             </div>
             <div class="card">
-                <div class="label">Azimuth / Elevation</div>
+                <div class="label">Target AZ / EL</div>
                 <div class="metric" id="position">-- / --</div>
+            </div>
+            <div class="card">
+                <div class="label">Measured AZ / EL</div>
+                <div class="metric" id="measured-position">-- / --</div>
             </div>
             <div class="card">
                 <div class="label">Signal Strength</div>
@@ -172,9 +176,11 @@
             const data = await response.json();
             document.getElementById('satellite').textContent = data.satellite_name;
             document.getElementById('position').textContent = data.azimuth + '° / ' + data.elevation + '°';
+            document.getElementById('measured-position').textContent =
+                (data.actual_azimuth ?? '--') + '° / ' + (data.actual_elevation ?? '--') + '°';
             document.getElementById('signal').textContent = data.signal_strength + ' dBm';
             document.getElementById('snr').textContent = data.snr + ' dB';
-            document.getElementById('status').textContent = data.communication_status;
+            document.getElementById('status').textContent = data.run_state || data.communication_status;
             document.getElementById('datarate').textContent = data.data_rate + ' bps';
         }
 

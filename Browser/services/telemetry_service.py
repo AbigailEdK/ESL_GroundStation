@@ -75,6 +75,12 @@ class TelemetryService:
                 'actual_elevation': state.get('actual_elevation'),
                 'azimuth_error': state.get('azimuth_error'),
                 'elevation_error': state.get('elevation_error'),
+                'mode': state.get('mode'),
+                'standalone_running': state.get('standalone_running', False),
+                'bridge_running': state.get('bridge_running', False),
+                'run_state': 'Running'
+                if state.get('standalone_running') or state.get('bridge_running')
+                else 'Idle',
                 'signal_strength': signal_strength,
                 'snr': snr,
                 'frequency': frequency,

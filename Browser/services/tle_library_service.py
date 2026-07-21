@@ -1,9 +1,10 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib import error, parse, request
 
 from flask import jsonify
+from skyfield.api import EarthSatellite
 
 
 class TleLibraryService:
@@ -55,7 +56,7 @@ class TleLibraryService:
         delta = datetime.now(timezone.utc) - stamp
         seconds = max(delta.total_seconds(), 0.0)
         if seconds < 60:
-            return 'just loaded'
+            return 'just saved'
         if seconds < 3600:
             minutes = int(seconds // 60)
             return f'{minutes} min old'
@@ -66,12 +67,10 @@ class TleLibraryService:
         return f'{days} d old'
 
     def _serialize_entry(self, entry):
-        last_loaded_utc = entry.get('last_loaded_utc')
         saved_at_utc = entry.get('saved_at_utc')
-        age_reference_utc = last_loaded_utc or saved_at_utc
         payload = dict(entry)
-        payload['age_reference_utc'] = age_reference_utc
-        payload['age_label'] = self._age_label(age_reference_utc)
+        payload['age_reference_utc'] = saved_at_utc
+        payload['age_label'] = self._age_label(saved_at_utc)
         payload['source'] = entry.get('source') or 'manual'
         return payload
 
@@ -86,7 +85,7 @@ class TleLibraryService:
     def list_saved(self):
         entries = [self._serialize_entry(entry) for entry in self._read_entries()]
         entries.sort(
-            key=lambda entry: entry.get('age_reference_utc') or entry.get('saved_at_utc') or '',
+            key=lambda entry: entry.get('saved_at_utc') or '',
             reverse=True,
         )
         return jsonify(entries)
@@ -193,6 +192,65 @@ class TleLibraryService:
             }
         )
 
+    def _fetch_public_entries(self, search_text):
+        url = (
+            'https://celestrak.org/NORAD/elements/gp.php?NAME='
+            f'{parse.quote(search_text)}&FORMAT=TLE'
+        )
+        with request.urlopen(url, timeout=8) as response:
+            body = response.read().decode('utf-8', errors='ignore')
+        return self._parse_tle_response(body)
+
+    @staticmethod
+    def _select_best_public_entry(search_text, results):
+        if not results:
+            return None
+
+        normalized = (search_text or '').strip().lower()
+        for entry in results:
+            if entry.get('name', '').strip().lower() == normalized:
+                return entry
+        return results[0]
+
+    def update_public_satellites(self):
+        entries = self._read_entries()
+        public_entries = [
+            entry for entry in entries
+            if (entry.get('source') or '').strip().lower() in {'public-search', 'celestrak'}
+        ]
+
+        if not public_entries:
+            return jsonify({'status': 'ok', 'message': 'No public satellites found', 'updated': 0})
+
+        updated_count = 0
+        not_found = []
+
+        for entry in public_entries:
+            try:
+                results = self._fetch_public_entries(entry.get('name', ''))
+            except error.URLError as exc:
+                return jsonify({'status': 'error', 'message': f'Public update unavailable: {exc}'}), 502
+            except Exception as exc:
+                return jsonify({'status': 'error', 'message': str(exc)}), 500
+
+            best = self._select_best_public_entry(entry.get('name', ''), results)
+            if best is None:
+                not_found.append(entry.get('name', 'unknown'))
+                continue
+
+            entry['name'] = best.get('name', entry.get('name'))
+            entry['line1'] = best.get('line1', entry.get('line1'))
+            entry['line2'] = best.get('line2', entry.get('line2'))
+            entry['source'] = best.get('source', entry.get('source') or 'public-search')
+            entry['saved_at_utc'] = self._utc_now_iso()
+            updated_count += 1
+
+        self._write_entries(entries)
+        message = f'Updated {updated_count} public satellite(s)'
+        if not_found:
+            message += f'; no match for {", ".join(not_found[:5])}'
+        return jsonify({'status': 'ok', 'message': message, 'updated': updated_count, 'not_found': not_found})
+
     @staticmethod
     def _parse_tle_response(text):
         lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -220,14 +278,8 @@ class TleLibraryService:
         search_text = (query or '').strip()
         if len(search_text) < 2:
             return jsonify({'status': 'error', 'message': 'Query must be at least 2 characters'}), 400
-
-        url = (
-            'https://celestrak.org/NORAD/elements/gp.php?NAME='
-            f'{parse.quote(search_text)}&FORMAT=TLE'
-        )
         try:
-            with request.urlopen(url, timeout=8) as response:
-                body = response.read().decode('utf-8', errors='ignore')
+            results = self._fetch_public_entries(search_text)
         except error.URLError as exc:
             return jsonify({'status': 'error', 'message': f'Public search unavailable: {exc}'}), 502
         except Exception as exc:
@@ -236,6 +288,58 @@ class TleLibraryService:
         return jsonify(
             {
                 'status': 'ok',
-                'results': self._parse_tle_response(body),
+                'results': results,
             }
         )
+
+    def preview_next_pass(self, data):
+        name = (data.get('name') or '').strip()
+        line1 = (data.get('line1') or '').strip()
+        line2 = (data.get('line2') or '').strip()
+        if not name or not line1 or not line2:
+            return jsonify({'status': 'error', 'message': 'name, line1, and line2 are required'}), 400
+
+        controller = self.controller
+        if controller is None or getattr(controller, 'tracker', None) is None:
+            return jsonify({'status': 'error', 'message': 'Controller unavailable'}), 503
+
+        tracker = controller.tracker
+        try:
+            satellite = EarthSatellite(line1, line2, name, tracker.ts)
+        except Exception:
+            return jsonify({'status': 'error', 'message': 'Failed to parse TLE for preview'}), 400
+
+        now_utc = datetime.now(timezone.utc)
+        controller_settings = getattr(self.controller, 'settings', {}) or {}
+        max_search_hours = float(controller_settings.get('pass_search_hours', 24.0))
+        min_elevation = float(controller_settings.get('pass_min_elevation_deg', 10.0))
+        t0 = tracker.ts.from_datetime(now_utc)
+        t1 = tracker.ts.from_datetime(now_utc + timedelta(hours=max_search_hours))
+
+        try:
+            t_events, events = satellite.find_events(tracker.observer, t0, t1, altitude_degrees=min_elevation)
+        except Exception as exc:
+            return jsonify({'status': 'error', 'message': str(exc)}), 500
+
+        current_pass = None
+        for t_event, event in zip(t_events, events):
+            event_time = t_event.utc_datetime()
+            if event == 0:
+                current_pass = {
+                    'satellite': name,
+                    'rise_time': event_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'max_elevation': None,
+                    'set_time': None,
+                    'duration': None,
+                }
+            elif event == 1 and current_pass is not None:
+                azimuth, elevation, _, _ = tracker.get_position(event_time)
+                current_pass['max_elevation'] = round(elevation, 1)
+                current_pass['peak_azimuth'] = round(azimuth, 1)
+            elif event == 2 and current_pass is not None:
+                current_pass['set_time'] = event_time.strftime('%Y-%m-%d %H:%M:%S')
+                rise_dt = datetime.strptime(current_pass['rise_time'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+                current_pass['duration'] = round((event_time - rise_dt).total_seconds() / 60.0, 1)
+                return jsonify({'status': 'ok', 'pass': current_pass})
+
+        return jsonify({'status': 'ok', 'pass': None})

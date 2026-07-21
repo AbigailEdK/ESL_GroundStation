@@ -1,7 +1,10 @@
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
+from urllib import parse
+
+import serial
 
 try:
     from . import config
@@ -27,6 +30,11 @@ class GroundStationController:
         self._lock = threading.Lock()
         self._tracking_thread = None
         self._tracking_running = False
+        self._bridge_thread = None
+        self._bridge_running = False
+        self._bridge_uart = None
+        self._scheduled_start_utc = None
+        self._scheduled_source = None
         self._refresh_rate_hz = float(
             self.settings.get('refresh_rate_hz', config.REFRESH_RATE_HZ)
         )
@@ -37,6 +45,9 @@ class GroundStationController:
         )
         self._uart_timeout = float(self.settings.get('uart_timeout', 0.5))
         self._feedback_enabled = bool(self.settings.get('feedback_enabled', True))
+        self._telemetry_enable_delay_s = float(self.settings.get('telemetry_enable_delay_s', 0.1))
+        self._bridge_port = self.settings.get('bridge_port', '/dev/ttyGS0')
+        self._bridge_timeout = float(self.settings.get('bridge_timeout', 0.1))
 
         self.tracker = startTracker(
             config.LATITUDE,
@@ -63,14 +74,17 @@ class GroundStationController:
             'last_error': None,
             'last_tx_utc': None,
             'last_update_utc': None,
+            'bridge_running': False,
+            'scheduled_start_utc': None,
+            'scheduled_source': None,
         }
 
         if auto_connect_uart:
             self.connect_uart()
 
-    def connect_uart(self):
+    def connect_uart(self, start_feedback=None):
         #  % ------------------------------------------------------------
-        #  % Inputs: No direct parameters; uses configured UART port, baudrate, timeout, and feedback flag.
+        #  % Inputs: Optional start_feedback override controlling whether the Pi parses incoming UART lines.
         #  % Side-effects: Opens serial connection, clears input buffer, may start RX loop callback, and updates state/error fields.
         #  % Returns: Tuple (ok, message) describing UART connection result.
         #  % ------------------------------------------------------------
@@ -79,6 +93,8 @@ class GroundStationController:
                 self.state['uart_connected'] = True
                 return True, 'UART already connected'
             try:
+                if start_feedback is None:
+                    start_feedback = self._feedback_enabled
                 self.uart = startUART(
                     port=self._uart_port,
                     baudrate=self._uart_baudrate,
@@ -87,7 +103,7 @@ class GroundStationController:
                 if self.uart is None:
                     raise RuntimeError('Failed to initialize UART')
                 self.uart.clear_input_buffer()
-                if self._feedback_enabled:
+                if start_feedback:
                     self.uart.start_rx_loop(
                         self._handle_feedback_line,
                         thread_name='uart-feedback-rx',
@@ -153,6 +169,16 @@ class GroundStationController:
         if state_match:
             payload['stm32_state'] = state_match.group(1).strip()
 
+        telemetry_match = re.search(
+            r'\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$',
+            line,
+        )
+        if telemetry_match:
+            payload['actual_azimuth'] = round(float(telemetry_match.group(1)), 2)
+            payload['actual_elevation'] = round(float(telemetry_match.group(2)), 2)
+            payload['target_azimuth'] = round(float(telemetry_match.group(3)), 2)
+            payload['target_elevation'] = round(float(telemetry_match.group(4)), 2)
+
         return payload
 
     def _handle_feedback_line(self, line):
@@ -174,6 +200,108 @@ class GroundStationController:
                 else:
                     self.state['last_error'] = None
 
+    def _set_schedule(self, scheduled_start_utc=None, source=None):
+        with self._lock:
+            self._scheduled_start_utc = scheduled_start_utc
+            self._scheduled_source = source
+            self.state['scheduled_start_utc'] = scheduled_start_utc
+            self.state['scheduled_source'] = source
+
+    def _open_bridge_uart(self):
+        if self._bridge_uart is not None:
+            return self._bridge_uart
+        self._bridge_uart = serial.Serial(self._bridge_port, baudrate=self._uart_baudrate, timeout=self._bridge_timeout)
+        return self._bridge_uart
+
+    def _close_bridge_uart(self):
+        if self._bridge_uart is not None:
+            try:
+                self._bridge_uart.close()
+            except Exception:
+                pass
+            self._bridge_uart = None
+
+    def start_computer_bridge(self, bridge_port=None):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Optional USB bridge serial port.
+        #  % Side-effects: Opens the USB-side serial device and starts a raw byte relay thread.
+        #  % Returns: Tuple (ok, message) describing bridge startup state.
+        #  % ------------------------------------------------------------
+        with self._lock:
+            if bridge_port:
+                self._bridge_port = bridge_port
+            if self._bridge_running:
+                return True, 'Computer bridge already running'
+            if self.uart is None:
+                ok, message = self.connect_uart(start_feedback=False)
+                if not ok:
+                    return False, message
+
+            try:
+                self._open_bridge_uart()
+            except Exception as exc:
+                self.state['last_error'] = str(exc)
+                return False, str(exc)
+
+            self._bridge_running = True
+            self.state['mode'] = 'computer'
+            self.state['bridge_running'] = True
+            self._bridge_thread = threading.Thread(target=self._bridge_loop, name='computer-bridge', daemon=True)
+            self._bridge_thread.start()
+            return True, 'Computer bridge started'
+
+    def stop_computer_bridge(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters.
+        #  % Side-effects: Stops the raw bridge and closes the USB-side serial port.
+        #  % Returns: Tuple (ok, message) describing bridge shutdown.
+        #  % ------------------------------------------------------------
+        with self._lock:
+            self._bridge_running = False
+            self.state['bridge_running'] = False
+            if self.state.get('mode') == 'computer':
+                self.state['mode'] = 'idle'
+        self._close_bridge_uart()
+        return True, 'Computer bridge stopped'
+
+    def _bridge_loop(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters; uses USB bridge UART and STM32 UART state.
+        #  % Side-effects: Relays raw bytes in both directions without parsing or reformatting.
+        #  % Returns: None; loop exits when bridge flag is cleared.
+        #  % ------------------------------------------------------------
+        while True:
+            with self._lock:
+                if not self._bridge_running:
+                    break
+                uart = self.uart
+                bridge_uart = self._bridge_uart
+
+            if uart is None or bridge_uart is None:
+                time.sleep(0.05)
+                continue
+
+            try:
+                if bridge_uart.in_waiting:
+                    data = bridge_uart.read(bridge_uart.in_waiting)
+                    if data:
+                        uart.send_raw_bytes(data)
+                        with self._lock:
+                            self.state['last_tx_utc'] = datetime.now(timezone.utc).isoformat()
+
+                if uart.in_waiting:
+                    data = uart.read_bytes(uart.in_waiting)
+                    if data:
+                        bridge_uart.write(data)
+                        with self._lock:
+                            self.state['last_rx_utc'] = datetime.now(timezone.utc).isoformat()
+            except Exception as exc:
+                with self._lock:
+                    self.state['last_error'] = str(exc)
+                time.sleep(0.1)
+
+            time.sleep(0.01)
+
     def load_tle(self, name, line1, line2):
         #  % ------------------------------------------------------------
         #  % Inputs: Satellite name and TLE line1/line2 strings.
@@ -188,6 +316,53 @@ class GroundStationController:
                 return True, 'TLE loaded'
             self.state['last_error'] = 'Failed to load TLE'
             return False, 'Failed to load TLE'
+
+    def get_next_pass(self, max_search_hours=None, min_elevation_deg=None):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Optional search horizon and minimum elevation threshold.
+        #  % Side-effects: Computes pass prediction from the current tracker state.
+        #  % Returns: Tuple (ok, message, payload) with the next pass summary when available.
+        #  % ------------------------------------------------------------
+        if self.tracker.satellite is None:
+            return False, 'Load TLE first', None
+
+        max_search_hours = float(max_search_hours if max_search_hours is not None else config.MAX_SEARCH_HOURS)
+        min_elevation_deg = float(min_elevation_deg if min_elevation_deg is not None else 10.0)
+        now_utc = datetime.now(timezone.utc)
+        t0 = self.tracker.ts.from_datetime(now_utc)
+        t1 = self.tracker.ts.from_datetime(now_utc + timedelta(hours=max_search_hours))
+
+        try:
+            t_events, events = self.tracker.satellite.find_events(
+                self.tracker.observer,
+                t0,
+                t1,
+                altitude_degrees=min_elevation_deg,
+            )
+        except Exception as exc:
+            return False, str(exc), None
+
+        current_pass = None
+        for t_event, event in zip(t_events, events):
+            event_time = t_event.utc_datetime()
+            if event == 0:
+                current_pass = {
+                    'rise_time': event_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'max_elevation': None,
+                    'set_time': None,
+                    'duration': None,
+                }
+            elif event == 1 and current_pass is not None:
+                azimuth, elevation, _, _ = self.tracker.get_position(event_time)
+                current_pass['max_elevation'] = round(elevation, 1)
+                current_pass['peak_azimuth'] = round(azimuth, 1)
+            elif event == 2 and current_pass is not None:
+                current_pass['set_time'] = event_time.strftime('%Y-%m-%d %H:%M:%S')
+                rise_dt = datetime.strptime(current_pass['rise_time'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
+                current_pass['duration'] = round((event_time - rise_dt).total_seconds() / 60.0, 1)
+                return True, 'Next pass computed', current_pass
+
+        return False, 'No upcoming pass found', None
 
     def send_external_target(self, azimuth, elevation):
         #  % ------------------------------------------------------------
@@ -206,7 +381,7 @@ class GroundStationController:
                 return False, 'UART not connected'
 
             try:
-                self.uart.send_position(azimuth, elevation)
+                self.uart.send_target_pair(azimuth, elevation)
                 self.state['last_tx_utc'] = datetime.now(timezone.utc).isoformat()
                 self.state['last_error'] = None
                 return True, 'Target sent'
@@ -231,13 +406,46 @@ class GroundStationController:
 
             self._tracking_running = True
             self.state['mode'] = 'standalone'
+            self.state['bridge_running'] = False
             self._tracking_thread = threading.Thread(
                 target=self._tracking_loop,
                 name='standalone-tracking',
                 daemon=True,
             )
             self._tracking_thread.start()
+            try:
+                if self.uart is None:
+                    self.connect_uart()
+                if self.uart is not None:
+                    self.uart.send_line('T')
+                    time.sleep(self._telemetry_enable_delay_s)
+            except Exception as exc:
+                self.state['last_error'] = str(exc)
             return True, 'Standalone tracking started'
+
+    def schedule_standalone_tracking(self, start_utc, refresh_rate_hz=None):
+        #  % ------------------------------------------------------------
+        #  % Inputs: ISO start time and optional refresh rate override.
+        #  % Side-effects: Stores a pending standalone tracking start request in controller state.
+        #  % Returns: Tuple (ok, message) describing schedule state.
+        #  % ------------------------------------------------------------
+        if self.tracker.satellite is None:
+            return False, 'Load TLE first'
+        try:
+            start_dt = datetime.fromisoformat(str(start_utc).replace('Z', '+00:00'))
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return False, 'Invalid start time'
+
+        if refresh_rate_hz is not None:
+            with self._lock:
+                self._refresh_rate_hz = max(0.2, float(refresh_rate_hz))
+
+        self._set_schedule(start_dt.isoformat(), self.tracker.satellite.name)
+        with self._lock:
+            self.state['mode'] = 'standby'
+        return True, f'Standalone tracking scheduled for {start_dt.isoformat()}'
 
     def stop_standalone_tracking(self):
         #  % ------------------------------------------------------------
@@ -248,6 +456,10 @@ class GroundStationController:
         with self._lock:
             self._tracking_running = False
             self.state['mode'] = 'idle'
+            self._scheduled_start_utc = None
+            self._scheduled_source = None
+            self.state['scheduled_start_utc'] = None
+            self.state['scheduled_source'] = None
         return True, 'Standalone tracking stopped'
 
     def _tracking_loop(self):
@@ -274,7 +486,7 @@ class GroundStationController:
                     self.state['last_update_utc'] = now_utc.isoformat()
 
                     if self.uart is not None:
-                        self.uart.send_position(azimuth, elevation)
+                        self.uart.send_target_pair(azimuth, elevation)
                         self.state['last_tx_utc'] = datetime.now(timezone.utc).isoformat()
                         self.state['last_error'] = None
             except Exception as exc:
@@ -293,6 +505,7 @@ class GroundStationController:
         with self._lock:
             state = dict(self.state)
             state['standalone_running'] = self._tracking_running
+            state['bridge_running'] = self._bridge_running
             az = state.get('target_azimuth')
             el = state.get('target_elevation')
             a_az = state.get('actual_azimuth')

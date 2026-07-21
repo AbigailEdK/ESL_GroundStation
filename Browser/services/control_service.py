@@ -110,6 +110,35 @@ class ControlService:
         status_code = 200 if ok else 400
         return jsonify({'status': 'ok' if ok else 'error', 'message': message}), status_code
 
+    def start_computer_bridge(self, data):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Optional USB bridge port override.
+        #  % Side-effects: Starts raw byte relay mode between the USB serial device and STM32 UART.
+        #  % Returns: A success/failure status with a descriptive message.
+        #  % ------------------------------------------------------------
+        unavailable = self._require_controller()
+        if unavailable is not None:
+            return unavailable
+
+        bridge_port = (data.get('bridge_port') or '').strip() or None
+        ok, message = self.controller.start_computer_bridge(bridge_port)
+        status_code = 200 if ok else 400
+        return jsonify({'status': 'ok' if ok else 'error', 'message': message}), status_code
+
+    def stop_computer_bridge(self):
+        #  % ------------------------------------------------------------
+        #  % Inputs: No direct parameters.
+        #  % Side-effects: Stops raw byte relay mode and closes the USB bridge serial device.
+        #  % Returns: A success/failure status with a descriptive message.
+        #  % ------------------------------------------------------------
+        unavailable = self._require_controller()
+        if unavailable is not None:
+            return unavailable
+
+        ok, message = self.controller.stop_computer_bridge()
+        status_code = 200 if ok else 500
+        return jsonify({'status': 'ok' if ok else 'error', 'message': message}), status_code
+
     def start_standalone(self, data):
         #  % ------------------------------------------------------------
         #  % Inputs: Parameters: data.
@@ -122,6 +151,22 @@ class ControlService:
 
         refresh_rate_hz = data.get('refresh_rate_hz')
         ok, message = self.controller.start_standalone_tracking(refresh_rate_hz)
+        status_code = 200 if ok else 400
+        return jsonify({'status': 'ok' if ok else 'error', 'message': message}), status_code
+
+    def schedule_standalone(self, data):
+        #  % ------------------------------------------------------------
+        #  % Inputs: JSON payload with ISO start_utc and optional refresh_rate_hz.
+        #  % Side-effects: Stores a scheduled standalone start in controller state.
+        #  % Returns: A success/failure status with a descriptive message.
+        #  % ------------------------------------------------------------
+        unavailable = self._require_controller()
+        if unavailable is not None:
+            return unavailable
+
+        start_utc = data.get('start_utc')
+        refresh_rate_hz = data.get('refresh_rate_hz')
+        ok, message = self.controller.schedule_standalone_tracking(start_utc, refresh_rate_hz)
         status_code = 200 if ok else 400
         return jsonify({'status': 'ok' if ok else 'error', 'message': message}), status_code
 

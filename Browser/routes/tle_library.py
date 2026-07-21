@@ -63,4 +63,22 @@ def create_tle_library_blueprint(tle_library_service):
         #  % ------------------------------------------------------------
         return tle_library_service.search_public(request.args.get('q', ''))
 
+    @blueprint.route('/preview-pass', methods=['POST'])
+    def preview_pass():
+        #  % ------------------------------------------------------------
+        #  % Inputs: JSON payload with a satellite name and TLE line1/line2 strings.
+        #  % Side-effects: Computes the next visible pass for the selected TLE.
+        #  % Returns: JSON pass preview or an error payload.
+        #  % ------------------------------------------------------------
+        return tle_library_service.preview_next_pass(request.json or {})
+
+    @blueprint.route('/update-public', methods=['POST'])
+    def update_public():
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses persisted saved entries.
+        #  % Side-effects: Refreshes saved public satellites with the latest available TLE data.
+        #  % Returns: Success or error JSON describing the bulk update result.
+        #  % ------------------------------------------------------------
+        return tle_library_service.update_public_satellites()
+
     return blueprint

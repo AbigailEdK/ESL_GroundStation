@@ -19,6 +19,7 @@ TODO:
 import os
 import time
 import json
+from datetime import datetime, timezone
 from urllib import request, error
 
 try:
@@ -133,13 +134,16 @@ def _read_mode_switch_config(settings):
     if not isinstance(switch, dict):
         switch = {}
 
-    pin = switch.get('pin', 17)
+    pin = switch.get('pin', 16)
     try:
         pin = int(pin)
     except (TypeError, ValueError):
-        pin = 17
+        pin = 16
 
-    pull_up = bool(switch.get('pull_up', True))
+    pull_resistor = str(switch.get('pull_resistor', 'none')).strip().lower()
+    if pull_resistor not in ('none', 'up', 'down'):
+        pull_resistor = 'none'
+
     standalone_when_low = bool(switch.get('standalone_when_low', True))
     default_mode = str(switch.get('default_mode', 'mcs')).strip().lower()
     if default_mode not in ('mcs', 'standalone'):
@@ -148,9 +152,33 @@ def _read_mode_switch_config(settings):
     return {
         'enabled': bool(switch.get('enabled', True)),
         'pin': pin,
-        'pull_up': pull_up,
+        'pull_resistor': pull_resistor,
         'standalone_when_low': standalone_when_low,
         'default_mode': default_mode,
+    }
+
+
+def _read_bridge_config(settings):
+    #  % ------------------------------------------------------------
+    #  % Inputs: settings dictionary loaded from integration settings file.
+    #  % Side-effects: Normalizes USB bridge port settings for computer mode.
+    #  % Returns: Sanitized bridge configuration dictionary.
+    #  % ------------------------------------------------------------
+    bridge = settings.get('computer_mode', {})
+    if not isinstance(bridge, dict):
+        bridge = {}
+
+    bridge_port = bridge.get('bridge_port', '/dev/ttyGS0')
+    bridge_port = str(bridge_port).strip() or '/dev/ttyGS0'
+
+    try:
+        bridge_timeout = float(bridge.get('bridge_timeout', 0.1))
+    except (TypeError, ValueError):
+        bridge_timeout = 0.1
+
+    return {
+        'bridge_port': bridge_port,
+        'bridge_timeout': bridge_timeout,
     }
 
 
@@ -175,11 +203,16 @@ def _setup_mode_switch(mode_switch_cfg):
         return _default_reader, _noop_cleanup, 'gpio-unavailable'
 
     pin = mode_switch_cfg['pin']
-    pull_up = mode_switch_cfg['pull_up']
+    pull_resistor = mode_switch_cfg['pull_resistor']
     standalone_when_low = mode_switch_cfg['standalone_when_low']
 
     GPIO.setmode(GPIO.BCM)
-    pud = GPIO.PUD_UP if pull_up else GPIO.PUD_DOWN
+    if pull_resistor == 'up':
+        pud = GPIO.PUD_UP
+    elif pull_resistor == 'down':
+        pud = GPIO.PUD_DOWN
+    else:
+        pud = GPIO.PUD_OFF
     GPIO.setup(pin, GPIO.IN, pull_up_down=pud)
 
     def _gpio_reader():
@@ -215,12 +248,16 @@ def main():
     # | Get standalone configuration values from loaded JSON, defaulting to disabled if missing or invalid.
     standalone_cfg = _read_standalone_config(settings)
 
+    # | Get computer bridge configuration values from loaded JSON.
+    bridge_cfg = _read_bridge_config(settings)
+
     # | Get mode switch configuration values from loaded JSON, defaulting to disabled if missing or invalid.
     mode_switch_cfg = _read_mode_switch_config(settings)
 
     # | read_mode() returns 'mcs' or 'standalone' based on GPIO pin state or default config.
     # | cleanup_mode_switch() releases GPIO resources when main loop exits.
     read_mode, cleanup_mode_switch, mode_source = _setup_mode_switch(mode_switch_cfg)
+    enforce_mode_switch = mode_source.startswith('gpio-bcm-')
 
     # * Main loop state variables
     # | standalone_loaded: True if TLE data has been successfully loaded for standalone mode.
@@ -238,12 +275,17 @@ def main():
     # | last_uart_retry: Timestamp of the last UART connection attempt to throttle retries.
     last_uart_retry = 0.0
 
+    # | computer_bridge_started: True if raw USB↔UART relay mode is active.
+    computer_bridge_started = False
+
     # * Start web browser
     # | Start Browser subprocess in background mode to serve web UI.
     browser_process = startBrowser(background=True)
 
     # * Main loop
     print(f"Starting Ground Station Prototype... mode source: {mode_source}")
+    if not enforce_mode_switch:
+        print('Mode switch enforcement disabled (GPIO input unavailable); browser actions control mode.')
     try:
         while True:
             
@@ -261,6 +303,7 @@ def main():
                 standalone_started = False
                 standalone_tle_warning_printed = False
                 last_uart_retry = 0.0
+                computer_bridge_started = False
 
             # > ------------------
             # >  STATE MANAGEMENT
@@ -277,12 +320,27 @@ def main():
                 pass
 
             # > ------------------
-            # >  UART CONNECTION
+            # >    MODE CHECK
             # > ------------------
-            # - ATTEMPT UART RECONNECT IF NOT CONNECTED
-            if not state.get('uart_connected'):
-                # | Attempt to reconnect UART every 5 seconds if not connected.
-                now = time.time()
+            requested_mode = None
+            if enforce_mode_switch:
+                # - READ CURRENT MODE
+                # | From GPIO pin when hardware mode switch is active.
+                requested_mode = read_mode()
+                if requested_mode != active_mode:
+                    print(f"Mode switch -> {requested_mode.upper()}")
+                    active_mode = requested_mode
+
+            # > ------------------
+            # >  UART / BRIDGE CONNECTION
+            # > ------------------
+            now = time.time()
+            if (
+                not state.get('uart_connected')
+                and not state.get('bridge_running')
+                and (not enforce_mode_switch or requested_mode != 'mcs')
+            ):
+                # | Attempt to reconnect UART every 5 seconds if not connected and not in raw bridge mode.
                 if now - last_uart_retry >= 5.0:
                     try:
                         response = _api_post('/api/control/connect-uart')
@@ -290,9 +348,7 @@ def main():
                             print(f"UART reconnect failed: {response.get('message', 'unknown error')}")
                     except Exception as exc:
                         print(f"UART reconnect failed: {exc}")
-                    # | Record this attempt time to throttle reconnect retries regardless of result.
                     last_uart_retry = now
-                    # | Get updated state after reconnect attempt to reflect current UART connection status.
                     try:
                         state = _api_get('/api/control/state')
                     except Exception:
@@ -320,80 +376,128 @@ def main():
             else:
                 print(f"{ts:10} | waiting for STM32...")
 
-            # > ------------------
-            # >    MODE CHECK
-            # > ------------------
-            # - READ CURRENT MODE
-            # | From GPIO pin or default config
-            requested_mode = read_mode()
-            # | If the requested mode differs from the active mode, update the active mode.
-            if requested_mode != active_mode:
-                print(f"Mode switch -> {requested_mode.upper()}")
-                active_mode = requested_mode
+            # | Re-read state after mode changes so bridge/tracking transitions use current controller values.
+            try:
+                state = _api_get('/api/control/state')
+            except Exception:
+                state = {}
 
-            # > ------------------
-            # >  STANDALONE MODE
-            # > ------------------
-            # - LOAD TLE AND START TRACKING IF STANDALONE MODE IS REQUESTED
-            # | If standalone mode is requested and enabled, attempt to load TLE data and start tracking.
-            if requested_mode == 'standalone' and standalone_cfg.get('enabled'):
-                # | Get name of satellite and TLE lines from config
-                name = standalone_cfg.get('name')
-                line1 = standalone_cfg.get('line1')
-                line2 = standalone_cfg.get('line2')
-
-                # | If TLE data is not yet loaded, attempt to load it via API call to Browser process.
-                if not standalone_loaded:
-                    # | Only attempt to load TLE if all fields are present; otherwise print a warning once.
-                    if name and line1 and line2:
+            if enforce_mode_switch:
+                # > ------------------
+                # >  COMPUTER MODE
+                # > ------------------
+                if requested_mode == 'mcs':
+                    if computer_bridge_started:
                         try:
-                            # | Send TLE data to Browser API for loading into GroundStationController.
-                            response = _api_post(
-                                '/api/control/load-tle',
-                                {'name': name, 'line1': line1, 'line2': line2},
-                            )
-                            # | Check response status to determine if TLE load was successful.
-                            standalone_loaded = response.get('status') == 'ok'
-                            print(f"Standalone TLE load: {response.get('message', 'no response message')}")
-                        except Exception as exc:
-                            standalone_loaded = False
-                            print(f"Standalone TLE load failed: {exc}")
-                        standalone_tle_warning_printed = False
-                    else:
-                        if not standalone_tle_warning_printed:
-                            print('Standalone mode enabled but TLE fields are incomplete')
-                            standalone_tle_warning_printed = True
-                        standalone_loaded = False
+                            _api_post('/api/control/computer-bridge/stop')
+                        except Exception:
+                            pass
+                        computer_bridge_started = False
 
-                # | If TLE is loaded and standalone tracking has not yet started, attempt to start it via API call.
-                if standalone_loaded and not standalone_started:
-                    try:
-                        response = _api_post(
-                            '/api/control/start-standalone',
-                            {'refresh_rate_hz': standalone_cfg.get('refresh_rate_hz')},
-                        )
-                        standalone_started = response.get('status') == 'ok'
-                        print(f"Standalone tracking: {response.get('message', 'no response message')}")
-                    except Exception as exc:
+                    if standalone_started:
+                        try:
+                            _api_post('/api/control/stop-standalone')
+                        except Exception:
+                            pass
                         standalone_started = False
-                        print(f"Standalone tracking failed: {exc}")
+                        print('Standalone tracking: stopped (computer mode)')
+
+                    if not computer_bridge_started:
+                        try:
+                            response = _api_post('/api/control/computer-bridge', {'bridge_port': bridge_cfg.get('bridge_port')})
+                            computer_bridge_started = response.get('status') == 'ok'
+                            print(f"Computer bridge: {response.get('message', 'no response message')}")
+                        except Exception as exc:
+                            computer_bridge_started = False
+                            print(f"Computer bridge failed: {exc}")
+
+                # > ------------------
+                # >  STANDALONE MODE
+                # > ------------------
+                elif requested_mode == 'standalone' and standalone_cfg.get('enabled'):
+                    if computer_bridge_started:
+                        try:
+                            _api_post('/api/control/computer-bridge/stop')
+                        except Exception:
+                            pass
+                        computer_bridge_started = False
+
+                    name = standalone_cfg.get('name')
+                    line1 = standalone_cfg.get('line1')
+                    line2 = standalone_cfg.get('line2')
+
+                    if not standalone_loaded:
+                        if name and line1 and line2:
+                            try:
+                                response = _api_post(
+                                    '/api/control/load-tle',
+                                    {'name': name, 'line1': line1, 'line2': line2},
+                                )
+                                standalone_loaded = response.get('status') == 'ok'
+                                print(f"Standalone TLE load: {response.get('message', 'no response message')}")
+                            except Exception as exc:
+                                standalone_loaded = False
+                                print(f"Standalone TLE load failed: {exc}")
+                            standalone_tle_warning_printed = False
+                        else:
+                            if not standalone_tle_warning_printed:
+                                print('Standalone mode enabled but TLE fields are incomplete')
+                                standalone_tle_warning_printed = True
+                            standalone_loaded = False
+
+                    scheduled_start_utc = state.get('scheduled_start_utc')
+                    if scheduled_start_utc and not standalone_started:
+                        try:
+                            scheduled_dt = datetime.fromisoformat(str(scheduled_start_utc).replace('Z', '+00:00'))
+                            if scheduled_dt.tzinfo is None:
+                                scheduled_dt = scheduled_dt.replace(tzinfo=timezone.utc)
+                            if datetime.now(timezone.utc) >= scheduled_dt:
+                                response = _api_post(
+                                    '/api/control/start-standalone',
+                                    {'refresh_rate_hz': standalone_cfg.get('refresh_rate_hz')},
+                                )
+                                standalone_started = response.get('status') == 'ok'
+                                print(f"Scheduled standalone start: {response.get('message', 'no response message')}")
+                        except Exception as exc:
+                            print(f"Scheduled standalone start failed: {exc}")
+
+                    if standalone_loaded and not standalone_started and not scheduled_start_utc:
+                        try:
+                            response = _api_post(
+                                '/api/control/start-standalone',
+                                {'refresh_rate_hz': standalone_cfg.get('refresh_rate_hz')},
+                            )
+                            standalone_started = response.get('status') == 'ok'
+                            print(f"Standalone tracking: {response.get('message', 'no response message')}")
+                        except Exception as exc:
+                            standalone_started = False
+                            print(f"Standalone tracking failed: {exc}")
+                else:
+                    if requested_mode == 'standalone' and not standalone_cfg.get('enabled'):
+                        if not standalone_tle_warning_printed:
+                            print('Standalone switch selected but standalone mode is disabled in config')
+                            standalone_tle_warning_printed = True
+
+                    if standalone_started:
+                        try:
+                            _api_post('/api/control/stop-standalone')
+                        except Exception:
+                            pass
+                        standalone_started = False
+                        print('Standalone tracking: stopped (MCS mode)')
+
+                    if requested_mode != 'standalone':
+                        standalone_tle_warning_printed = False
+
+                    if computer_bridge_started:
+                        try:
+                            _api_post('/api/control/computer-bridge/stop')
+                        except Exception:
+                            pass
+                        computer_bridge_started = False
             else:
-                # | If standalone mode is not requested or not enabled, stop standalone tracking if it was previously started.
-                if requested_mode == 'standalone' and not standalone_cfg.get('enabled'):
-                    if not standalone_tle_warning_printed:
-                        print('Standalone switch selected but standalone mode is disabled in config')
-                        standalone_tle_warning_printed = True
-
-                if standalone_started:
-                    try:
-                        _api_post('/api/control/stop-standalone')
-                    except Exception:
-                        pass
-                    standalone_started = False
-                    print('Standalone tracking: stopped (MCS mode)')
-
-                if requested_mode != 'standalone':
-                    standalone_tle_warning_printed = False
+                standalone_started = bool(state.get('standalone_running'))
+                computer_bridge_started = bool(state.get('bridge_running'))
 
             # > ------------------
             # >  EXTERNAL MCS MODE

@@ -54,6 +54,24 @@ def create_control_blueprint(control_service):
         #  % ------------------------------------------------------------
         return control_service.load_tle(request.json or {})
 
+    @blueprint.route('/computer-bridge', methods=['POST'])
+    def computer_bridge():
+        #  % ------------------------------------------------------------
+        #  % Inputs: Optional JSON payload with bridge_port override.
+        #  % Side-effects: Starts raw UART relay mode for computer control.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
+        return control_service.start_computer_bridge(request.json or {})
+
+    @blueprint.route('/computer-bridge/stop', methods=['POST'])
+    def computer_bridge_stop():
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses controller state.
+        #  % Side-effects: Stops raw UART relay mode.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
+        return control_service.stop_computer_bridge()
+
     @blueprint.route('/start-standalone', methods=['POST'])
     def start_standalone():
         #  % ------------------------------------------------------------
@@ -62,6 +80,15 @@ def create_control_blueprint(control_service):
         #  % Returns: The function result for the caller (type depends on operation).
         #  % ------------------------------------------------------------
         return control_service.start_standalone(request.json or {})
+
+    @blueprint.route('/schedule-standalone', methods=['POST'])
+    def schedule_standalone():
+        #  % ------------------------------------------------------------
+        #  % Inputs: JSON payload with start_utc and optional refresh_rate_hz.
+        #  % Side-effects: Stores a scheduled standalone start.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
+        return control_service.schedule_standalone(request.json or {})
 
     @blueprint.route('/stop-standalone', methods=['POST'])
     def stop_standalone():
