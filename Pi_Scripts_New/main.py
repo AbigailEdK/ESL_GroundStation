@@ -271,6 +271,8 @@ def main():
     # | read_mode() returns 'mcs' or 'standalone' based on GPIO pin state or default config.
     # | cleanup_mode_switch() releases GPIO resources when main loop exits.
     read_mode, cleanup_mode_switch, mode_source = _setup_mode_switch(mode_switch_cfg)
+
+    # | enforce_mode_switch is True if GPIO input is available and used for mode arbitration; otherwise, browser commands control mode.
     enforce_mode_switch = mode_source.startswith('gpio-bcm-')
 
     # * Main loop state variables
@@ -305,6 +307,7 @@ def main():
         print('Mode switch enforcement disabled (GPIO input unavailable); browser actions control mode.')
     else:
         try:
+            # | If hardware mode switch is available, read its initial state and set the mode accordingly.
             last_hardware_mode = _normalize_mode(read_mode())
             _api_post(
                 '/api/control/set-mode',
@@ -333,14 +336,18 @@ def main():
                 standalone_started = False
                 standalone_tle_warning_printed = False
                 last_uart_retry = 0.0
+
+                # | Reset computer bridge state to ensure it is restarted after browser restart.
                 computer_bridge_started = False
+
+                # | Last set of hardware switch 
                 last_hardware_mode = None
 
             # > ------------------
             # >  STATE MANAGEMENT
             # > ------------------
             # - READ CURRENT STATE FROM CONTROLLER
-            # | Returns a dictionary containing telemetry values (target and actual azimuth/elevation) 
+            # | Returns a dictionary containing telemetry values (target and actual azimuth/elevation), etc.  
             state = {}
             try:
                 # | Get through API to avoid direct UART access in this script, since Browser process owns the serial port.
@@ -366,7 +373,7 @@ def main():
                 if last_hardware_mode is None:
                     last_hardware_mode = physical_mode
 
-                # Physical switch edge overrides browser ownership until browser command is used again.
+                # | Physical switch edge overrides browser ownership until browser command is used again.
                 if physical_mode != last_hardware_mode:
                     try:
                         _api_post(
@@ -396,7 +403,7 @@ def main():
                     active_mode = requested_mode
 
             # > ------------------
-            # >  UART / BRIDGE CONNECTION
+            # >  UART CONNECTION
             # > ------------------
             now = time.time()
             if (
@@ -562,10 +569,6 @@ def main():
             else:
                 standalone_started = bool(state.get('standalone_running'))
                 computer_bridge_started = bool(state.get('bridge_running'))
-
-            # > ------------------
-            # >  EXTERNAL MCS MODE
-            # > ------------------
 
             # > ------------------
             # > REFERENCE INPUTS

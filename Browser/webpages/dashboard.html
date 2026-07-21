@@ -202,6 +202,75 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
+        .path-chart-wrap {
+            margin-top: 14px;
+        }
+
+        .path-chart-meta {
+            color: #b8c0c8;
+            font-size: 13px;
+            margin: 8px 0 14px;
+        }
+
+        .path-chart-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 14px;
+        }
+
+        .path-panel {
+            background: #1f1f1f;
+            border: 1px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .path-panel-title {
+            color: #d8d8d8;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            margin-bottom: 8px;
+        }
+
+        .path-canvas {
+            width: 100%;
+            height: 220px;
+            display: block;
+            background: #171717;
+            border-radius: 6px;
+        }
+
+        .path-legend {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+            color: #c7c7c7;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-swatch {
+            width: 12px;
+            height: 2px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+
+        .legend-target {
+            background: #00d4ff;
+        }
+
+        .legend-measured {
+            background: #ff9f43;
+        }
     </style>
 </head>
 
@@ -268,11 +337,36 @@
                 </tbody>
             </table>
         </div>
+
+        <div class="card full-width path-chart-wrap">
+            <div class="label">Predicted and Live Path</div>
+            <div class="path-chart-meta" id="path-chart-meta">Loading next pass path...</div>
+            <div class="path-chart-grid">
+                <div class="path-panel">
+                    <div class="path-panel-title">Azimuth (deg)</div>
+                    <canvas id="az-path-chart" class="path-canvas" width="1000" height="220"></canvas>
+                </div>
+                <div class="path-panel">
+                    <div class="path-panel-title">Elevation (deg)</div>
+                    <canvas id="el-path-chart" class="path-canvas" width="1000" height="220"></canvas>
+                </div>
+            </div>
+            <div class="path-legend">
+                <span class="legend-item"><span class="legend-swatch legend-target"></span>Target</span>
+                <span class="legend-item"><span class="legend-swatch legend-measured"></span>Measured</span>
+            </div>
+        </div>
     </div>
 
     <script>
         let modeToggleSyncing = false;
         const MODE_PREF_KEY = 'gs_requested_mode';
+        const LIVE_SERIES_MAX_AGE_MS = 45 * 60 * 1000;
+        const LIVE_SERIES_MAX_POINTS = 2000;
+
+        let predictedPathSamples = [];
+        let livePathSamples = [];
+        let currentPathSatellite = null;
 
         function loadModePreference() {
             try {
@@ -402,6 +496,222 @@
             node.classList.add(sourceClass(cleaned));
         }
 
+        function toFiniteNumber(value) {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : null;
+        }
+
+        function pushLivePathPoint(data) {
+            const point = {
+                t: Date.now(),
+                targetAz: toFiniteNumber(data.azimuth),
+                targetEl: toFiniteNumber(data.elevation),
+                measuredAz: toFiniteNumber(data.actual_azimuth),
+                measuredEl: toFiniteNumber(data.actual_elevation),
+            };
+
+            if (
+                point.targetAz === null
+                && point.targetEl === null
+                && point.measuredAz === null
+                && point.measuredEl === null
+            ) {
+                return;
+            }
+
+            livePathSamples.push(point);
+            const minKeepTime = Date.now() - LIVE_SERIES_MAX_AGE_MS;
+            livePathSamples = livePathSamples.filter((sample) => sample.t >= minKeepTime);
+            if (livePathSamples.length > LIVE_SERIES_MAX_POINTS) {
+                livePathSamples = livePathSamples.slice(livePathSamples.length - LIVE_SERIES_MAX_POINTS);
+            }
+        }
+
+        function resizeCanvasForDpr(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const cssWidth = Math.max(canvas.clientWidth || 1000, 50);
+            const cssHeight = Math.max(canvas.clientHeight || 220, 50);
+            const targetWidth = Math.round(cssWidth * dpr);
+            const targetHeight = Math.round(cssHeight * dpr);
+            if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            return {
+                ctx,
+                width: cssWidth,
+                height: cssHeight,
+            };
+        }
+
+        function formatTickTime(ms) {
+            const dt = new Date(ms);
+            const hh = String(dt.getHours()).padStart(2, '0');
+            const mm = String(dt.getMinutes()).padStart(2, '0');
+            const ss = String(dt.getSeconds()).padStart(2, '0');
+            return `${hh}:${mm}:${ss}`;
+        }
+
+        function renderSeriesChart(canvasId, config) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) {
+                return;
+            }
+            const { ctx, width, height } = resizeCanvasForDpr(canvas);
+
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = '#171717';
+            ctx.fillRect(0, 0, width, height);
+
+            const margin = { top: 18, right: 18, bottom: 34, left: 54 };
+            const plotX = margin.left;
+            const plotY = margin.top;
+            const plotW = width - margin.left - margin.right;
+            const plotH = height - margin.top - margin.bottom;
+
+            const targetPoints = [
+                ...predictedPathSamples
+                    .map((sample) => ({ t: sample.t, y: sample[config.targetKey] }))
+                    .filter((sample) => Number.isFinite(sample.y)),
+                ...livePathSamples
+                    .map((sample) => ({ t: sample.t, y: sample[config.targetLiveKey] }))
+                    .filter((sample) => Number.isFinite(sample.y)),
+            ].sort((a, b) => a.t - b.t);
+
+            const measuredPoints = livePathSamples
+                .map((sample) => ({ t: sample.t, y: sample[config.measuredKey] }))
+                .filter((sample) => Number.isFinite(sample.y))
+                .sort((a, b) => a.t - b.t);
+
+            const allTimes = [...targetPoints.map((p) => p.t), ...measuredPoints.map((p) => p.t)];
+            if (!allTimes.length) {
+                ctx.fillStyle = '#9da3aa';
+                ctx.font = '12px Arial';
+                ctx.fillText('No path data yet', plotX + 12, plotY + 22);
+                return;
+            }
+
+            let xMin = Math.min(...allTimes);
+            let xMax = Math.max(...allTimes);
+            if (xMax - xMin < 60 * 1000) {
+                xMax = xMin + 60 * 1000;
+            }
+
+            const yMin = config.yMin;
+            const yMax = config.yMax;
+            const xToPx = (value) => plotX + ((value - xMin) / (xMax - xMin)) * plotW;
+            const yToPx = (value) => plotY + (1 - (value - yMin) / (yMax - yMin)) * plotH;
+
+            ctx.strokeStyle = '#2f3438';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const yVal = yMin + ((yMax - yMin) * i) / 4;
+                const yPx = yToPx(yVal);
+                ctx.beginPath();
+                ctx.moveTo(plotX, yPx);
+                ctx.lineTo(plotX + plotW, yPx);
+                ctx.stroke();
+
+                ctx.fillStyle = '#8f969e';
+                ctx.font = '11px Arial';
+                ctx.fillText(yVal.toFixed(0), 8, yPx + 4);
+            }
+
+            for (let i = 0; i <= 5; i++) {
+                const tVal = xMin + ((xMax - xMin) * i) / 5;
+                const xPx = xToPx(tVal);
+                ctx.beginPath();
+                ctx.moveTo(xPx, plotY);
+                ctx.lineTo(xPx, plotY + plotH);
+                ctx.stroke();
+
+                ctx.fillStyle = '#8f969e';
+                ctx.font = '10px Arial';
+                ctx.fillText(formatTickTime(tVal), xPx - 18, plotY + plotH + 14);
+            }
+
+            ctx.strokeStyle = '#454b52';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(plotX, plotY, plotW, plotH);
+
+            function drawLine(points, color) {
+                if (!points.length) {
+                    return;
+                }
+                ctx.beginPath();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                points.forEach((point, index) => {
+                    const x = xToPx(point.t);
+                    const y = yToPx(point.y);
+                    if (index === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+                ctx.stroke();
+            }
+
+            drawLine(targetPoints, '#00d4ff');
+            drawLine(measuredPoints, '#ff9f43');
+        }
+
+        function renderPathCharts() {
+            renderSeriesChart('az-path-chart', {
+                targetKey: 'targetAz',
+                targetLiveKey: 'targetAz',
+                measuredKey: 'measuredAz',
+                yMin: 0,
+                yMax: 360,
+            });
+
+            renderSeriesChart('el-path-chart', {
+                targetKey: 'targetEl',
+                targetLiveKey: 'targetEl',
+                measuredKey: 'measuredEl',
+                yMin: -10,
+                yMax: 90,
+            });
+        }
+
+        async function loadPredictedPath() {
+            try {
+                const response = await fetch('/api/next-pass-path');
+                const payload = await response.json();
+                const samples = Array.isArray(payload.samples) ? payload.samples : [];
+                predictedPathSamples = samples
+                    .map((sample) => ({
+                        t: Number(sample.time_ms),
+                        targetAz: toFiniteNumber(sample.target_azimuth),
+                        targetEl: toFiniteNumber(sample.target_elevation),
+                    }))
+                    .filter((sample) => Number.isFinite(sample.t));
+
+                const sat = formatText(payload.satellite, '--');
+                const rise = formatText(payload.rise_time, '--');
+                const set = formatText(payload.set_time, '--');
+                currentPathSatellite = sat;
+                if (!predictedPathSamples.length) {
+                    document.getElementById('path-chart-meta').textContent =
+                        `No predicted pass path available for ${sat}.`;
+                } else {
+                    document.getElementById('path-chart-meta').textContent =
+                        `${sat} | Next pass: ${rise} -> ${set}`;
+                }
+                renderPathCharts();
+            } catch (_err) {
+                predictedPathSamples = [];
+                document.getElementById('path-chart-meta').textContent =
+                    'Unable to load predicted path data.';
+                renderPathCharts();
+            }
+        }
+
         async function updateDashboard() {
             try {
                 const response = await fetch('/api/satellite-status');
@@ -415,12 +725,20 @@
                 setSourceBadge('measured-source', data.measured_source);
                 document.getElementById('satellite-status-text').textContent =
                     `Status: ${formatText(data.run_state || data.communication_status, 'Idle')}`;
+                pushLivePathPoint(data);
+                renderPathCharts();
+                const satName = formatText(data.satellite_name, '--');
+                if (currentPathSatellite !== satName) {
+                    livePathSamples = [];
+                    loadPredictedPath();
+                }
                 syncModeUI(data);
             } catch (_err) {
                 renderModeStatus('browser', loadModePreference(), '--');
                 setSourceBadge('target-source', '--');
                 setSourceBadge('measured-source', '--');
                 document.getElementById('satellite-status-text').textContent = 'Status: --';
+                renderPathCharts();
             }
         }
 
@@ -453,8 +771,11 @@
         initializeModeToggleFromPreference();
         updateDashboard();
         loadPasses();
+        loadPredictedPath();
         setInterval(updateDashboard, 2000);
         setInterval(loadPasses, 30000);
+        setInterval(loadPredictedPath, 60000);
+        window.addEventListener('resize', renderPathCharts);
     </script>
 </body>
 

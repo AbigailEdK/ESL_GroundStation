@@ -203,6 +203,91 @@ class TelemetryService:
 
         return jsonify(upcoming_passes)
 
+    def next_pass_path(self):
+        """Return sampled target AZ/EL path for the next predicted pass."""
+        state = self._controller_state()
+        satellite_name = state.get('satellite_name')
+        controller = self.controller
+        tracker = getattr(controller, 'tracker', None) if controller is not None else None
+        satellite = getattr(tracker, 'satellite', None) if tracker is not None else None
+        observer = getattr(tracker, 'observer', None) if tracker is not None else None
+        ts = getattr(tracker, 'ts', None) if tracker is not None else None
+
+        if not satellite_name or tracker is None or satellite is None or observer is None or ts is None:
+            return jsonify({'satellite': satellite_name, 'samples': []})
+
+        max_search_hours = float(self.settings.get('pass_search_hours', 24.0))
+        min_elevation = float(self.settings.get('pass_min_elevation_deg', 10.0))
+        now_utc = datetime.now(timezone.utc)
+        t0 = ts.from_datetime(now_utc)
+        t1 = ts.from_datetime(now_utc + timedelta(hours=max_search_hours))
+
+        try:
+            t_events, events = satellite.find_events(observer, t0, t1, altitude_degrees=min_elevation)
+        except Exception:
+            return jsonify({'satellite': satellite_name, 'samples': []})
+
+        next_pass = None
+        current_rise = None
+        for t_event, event in zip(t_events, events):
+            event_time = t_event.utc_datetime()
+            if event == 0:
+                current_rise = event_time
+            elif event == 2 and current_rise is not None:
+                next_pass = (current_rise, event_time)
+                break
+
+        if next_pass is None:
+            return jsonify({'satellite': satellite_name, 'samples': []})
+
+        rise_utc, set_utc = next_pass
+        start_utc = max(now_utc, rise_utc)
+        if start_utc >= set_utc:
+            return jsonify({'satellite': satellite_name, 'samples': []})
+
+        duration_seconds = max((set_utc - start_utc).total_seconds(), 1.0)
+        sample_step_seconds = max(5.0, min(30.0, duration_seconds / 180.0))
+
+        samples = []
+        current_time = start_utc
+        while current_time <= set_utc:
+            try:
+                azimuth, elevation, _, _ = tracker.get_position(current_time)
+                samples.append(
+                    {
+                        'timestamp': current_time.isoformat(),
+                        'time_ms': int(current_time.timestamp() * 1000),
+                        'target_azimuth': round(azimuth, 2),
+                        'target_elevation': round(elevation, 2),
+                    }
+                )
+            except Exception:
+                pass
+            current_time += timedelta(seconds=sample_step_seconds)
+
+        if not samples or samples[-1]['time_ms'] < int(set_utc.timestamp() * 1000):
+            try:
+                azimuth, elevation, _, _ = tracker.get_position(set_utc)
+                samples.append(
+                    {
+                        'timestamp': set_utc.isoformat(),
+                        'time_ms': int(set_utc.timestamp() * 1000),
+                        'target_azimuth': round(azimuth, 2),
+                        'target_elevation': round(elevation, 2),
+                    }
+                )
+            except Exception:
+                pass
+
+        return jsonify(
+            {
+                'satellite': satellite_name,
+                'rise_time': rise_utc.strftime('%Y-%m-%d %H:%M:%S'),
+                'set_time': set_utc.strftime('%Y-%m-%d %H:%M:%S'),
+                'samples': samples,
+            }
+        )
+
     def receiver_config(self):
         """Return receiver configuration."""
         #  % ------------------------------------------------------------

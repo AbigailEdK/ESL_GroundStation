@@ -36,6 +36,15 @@ def create_telemetry_blueprint(telemetry_service):
         #  % ------------------------------------------------------------
         return telemetry_service.upcoming_passes()
 
+    @blueprint.route('/next-pass-path')
+    def next_pass_path():
+        #  % ------------------------------------------------------------
+        #  % Inputs: No explicit parameters; uses internal state, constants, or environment context.
+        #  % Side-effects: Executes module logic and may read or mutate internal state.
+        #  % Returns: Predicted target path samples for the next pass.
+        #  % ------------------------------------------------------------
+        return telemetry_service.next_pass_path()
+
     @blueprint.route('/receiver-config')
     def receiver_config():
         #  % ------------------------------------------------------------
