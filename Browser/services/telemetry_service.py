@@ -76,6 +76,9 @@ class TelemetryService:
                 'azimuth_error': state.get('azimuth_error'),
                 'elevation_error': state.get('elevation_error'),
                 'mode': state.get('mode'),
+                'requested_mode': state.get('requested_mode') or 'mcs',
+                'mode_owner': state.get('mode_owner') or 'browser',
+                'hardware_mode': state.get('hardware_mode'),
                 'standalone_running': state.get('standalone_running', False),
                 'bridge_running': state.get('bridge_running', False),
                 'run_state': 'Running'

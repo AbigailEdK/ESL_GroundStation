@@ -99,6 +99,20 @@ def _api_get(path, timeout=2.0):
         return json.loads(body) if body else {}
 
 
+def _normalize_mode(mode):
+    #  % ------------------------------------------------------------
+    #  % Inputs: Raw mode value from API, browser command, or hardware mapping.
+    #  % Side-effects: None.
+    #  % Returns: Canonical mode string (`mcs` or `standalone`).
+    #  % ------------------------------------------------------------
+    value = str(mode or '').strip().lower()
+    if value in ('mcs', 'computer', 'external'):
+        return 'mcs'
+    if value == 'standalone':
+        return 'standalone'
+    return 'mcs'
+
+
 def _read_standalone_config(settings):
     #  % ------------------------------------------------------------
     #  % Inputs: settings dictionary loaded from integration settings file.
@@ -278,6 +292,9 @@ def main():
     # | computer_bridge_started: True if raw USB↔UART relay mode is active.
     computer_bridge_started = False
 
+    # | last_hardware_mode: Last sampled physical switch mode used to detect ownership override edges.
+    last_hardware_mode = None
+
     # * Start web browser
     # | Start Browser subprocess in background mode to serve web UI.
     browser_process = startBrowser(background=True)
@@ -286,6 +303,19 @@ def main():
     print(f"Starting Ground Station Prototype... mode source: {mode_source}")
     if not enforce_mode_switch:
         print('Mode switch enforcement disabled (GPIO input unavailable); browser actions control mode.')
+    else:
+        try:
+            last_hardware_mode = _normalize_mode(read_mode())
+            _api_post(
+                '/api/control/set-mode',
+                {
+                    'mode': last_hardware_mode,
+                    'owner': 'hardware',
+                    'hardware_mode': last_hardware_mode,
+                },
+            )
+        except Exception:
+            pass
     try:
         while True:
             
@@ -304,6 +334,7 @@ def main():
                 standalone_tle_warning_printed = False
                 last_uart_retry = 0.0
                 computer_bridge_started = False
+                last_hardware_mode = None
 
             # > ------------------
             # >  STATE MANAGEMENT
@@ -326,9 +357,53 @@ def main():
             if enforce_mode_switch:
                 # - READ CURRENT MODE
                 # | From GPIO pin when hardware mode switch is active.
-                requested_mode = read_mode()
+                physical_mode = _normalize_mode(read_mode())
+                mode_owner = str(state.get('mode_owner') or 'hardware').strip().lower()
+                browser_mode = _normalize_mode(state.get('requested_mode'))
+                if browser_mode not in ('mcs', 'standalone'):
+                    browser_mode = physical_mode
+
+                if last_hardware_mode is None:
+                    last_hardware_mode = physical_mode
+
+                # Physical switch edge overrides browser ownership until browser command is used again.
+                if physical_mode != last_hardware_mode:
+                    try:
+                        _api_post(
+                            '/api/control/set-mode',
+                            {
+                                'mode': physical_mode,
+                                'owner': 'hardware',
+                                'hardware_mode': physical_mode,
+                            },
+                        )
+                    except Exception:
+                        pass
+                    print(f"Mode switch override -> {physical_mode.upper()} (hardware owner)")
+                    mode_owner = 'hardware'
+                    requested_mode = physical_mode
+                else:
+                    requested_mode = browser_mode if mode_owner == 'browser' else physical_mode
+                    try:
+                        _api_post(
+                            '/api/control/set-mode',
+                            {
+                                'mode': requested_mode,
+                                'owner': mode_owner,
+                                'hardware_mode': physical_mode,
+                            },
+                        )
+                    except Exception:
+                        pass
+
+                last_hardware_mode = physical_mode
                 if requested_mode != active_mode:
-                    print(f"Mode switch -> {requested_mode.upper()}")
+                    print(f"Effective mode -> {requested_mode.upper()} ({mode_owner})")
+                    active_mode = requested_mode
+            else:
+                requested_mode = _normalize_mode(state.get('requested_mode'))
+                if requested_mode != active_mode:
+                    print(f"Effective mode -> {requested_mode.upper()} (browser)")
                     active_mode = requested_mode
 
             # > ------------------

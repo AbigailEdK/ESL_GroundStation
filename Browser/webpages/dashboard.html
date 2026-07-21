@@ -105,6 +105,77 @@
         .passes-table td {
             color: #ccc;
         }
+
+        .mode-panel {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .mode-status {
+            color: #ddd;
+            font-size: 14px;
+        }
+
+        .mode-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 62px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #666;
+            transition: .25s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: '';
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: #fff;
+            transition: .25s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #00b86b;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(28px);
+        }
+
+        .mode-label {
+            color: #ddd;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 
@@ -120,6 +191,22 @@
 
     <div class="content">
         <h1>🛰️ Ground Station Dashboard</h1>
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="mode-panel">
+                <div>
+                    <div class="label">Mode Control</div>
+                    <div class="mode-status" id="mode-owner-status">Owner: -- | Effective mode: --</div>
+                </div>
+                <div class="mode-toggle">
+                    <span class="mode-label">MCS</span>
+                    <label class="switch" title="Toggle between MCS and Standalone browser mode command">
+                        <input type="checkbox" id="mode-toggle" onchange="setModeFromToggle()">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="mode-label">Standalone</span>
+                </div>
+            </div>
+        </div>
         <div class="dashboard">
             <div class="card">
                 <div class="label">Satellite</div>
@@ -171,6 +258,51 @@
     </div>
 
     <script>
+        let modeToggleSyncing = false;
+
+        async function postControl(path, payload = {}) {
+            const response = await fetch(path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            if (!response.ok || data.status === 'error') {
+                throw new Error(data.message || `Request failed with status ${response.status}`);
+            }
+            return data;
+        }
+
+        async function setModeFromToggle() {
+            if (modeToggleSyncing) {
+                return;
+            }
+            const toggle = document.getElementById('mode-toggle');
+            const requestedMode = toggle.checked ? 'standalone' : 'mcs';
+            try {
+                await postControl('/api/control/set-mode', {
+                    mode: requestedMode,
+                    owner: 'browser',
+                });
+            } catch (err) {
+                console.error('Mode update failed:', err.message);
+            }
+        }
+
+        function syncModeUI(data) {
+            const effectiveMode = (data.requested_mode || 'mcs').toLowerCase();
+            const modeOwner = data.mode_owner || 'browser';
+            const hardwareMode = data.hardware_mode || '--';
+
+            modeToggleSyncing = true;
+            document.getElementById('mode-toggle').checked = effectiveMode === 'standalone';
+            modeToggleSyncing = false;
+
+            const modeText = effectiveMode.toUpperCase();
+            document.getElementById('mode-owner-status').textContent =
+                `Owner: ${modeOwner.toUpperCase()} | Effective mode: ${modeText} | Hardware: ${String(hardwareMode).toUpperCase()}`;
+        }
+
         async function updateDashboard() {
             const response = await fetch('/api/satellite-status');
             const data = await response.json();
@@ -182,6 +314,7 @@
             document.getElementById('snr').textContent = data.snr + ' dB';
             document.getElementById('status').textContent = data.run_state || data.communication_status;
             document.getElementById('datarate').textContent = data.data_rate + ' bps';
+            syncModeUI(data);
         }
 
         async function loadPasses() {

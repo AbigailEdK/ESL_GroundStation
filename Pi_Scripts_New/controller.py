@@ -2,7 +2,6 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 import re
-from urllib import parse
 
 import serial
 
@@ -58,6 +57,10 @@ class GroundStationController:
 
         self.state = {
             'mode': 'idle',
+            'requested_mode': 'mcs',
+            'mode_owner': 'browser',
+            'hardware_mode': None,
+            'mode_command_utc': datetime.now(timezone.utc).isoformat(),
             'satellite_name': None,
             'target_azimuth': None,
             'target_elevation': None,
@@ -206,6 +209,34 @@ class GroundStationController:
             self._scheduled_source = source
             self.state['scheduled_start_utc'] = scheduled_start_utc
             self.state['scheduled_source'] = source
+
+    def set_mode_command(self, mode, owner='browser', hardware_mode=None):
+        #  % ------------------------------------------------------------
+        #  % Inputs: Requested mode (`mcs` or `standalone`), ownership source, and optional hardware mode snapshot.
+        #  % Side-effects: Updates mode arbitration fields used by the runtime control loop and dashboard UI.
+        #  % Returns: Tuple (ok, message) describing command acceptance.
+        #  % ------------------------------------------------------------
+        mode = str(mode or '').strip().lower()
+        owner = str(owner or 'browser').strip().lower()
+        hardware_mode = str(hardware_mode or '').strip().lower() or None
+
+        if mode not in ('mcs', 'standalone'):
+            return False, 'mode must be mcs or standalone'
+        if owner not in ('browser', 'hardware'):
+            return False, 'owner must be browser or hardware'
+        if hardware_mode is not None and hardware_mode not in ('mcs', 'standalone'):
+            return False, 'hardware_mode must be mcs or standalone'
+
+        with self._lock:
+            self.state['requested_mode'] = mode
+            self.state['mode_owner'] = owner
+            if hardware_mode is not None:
+                self.state['hardware_mode'] = hardware_mode
+            elif owner == 'hardware':
+                self.state['hardware_mode'] = mode
+            self.state['mode_command_utc'] = datetime.now(timezone.utc).isoformat()
+
+        return True, f'{owner} requested {mode}'
 
     def _open_bridge_uart(self):
         if self._bridge_uart is not None:

@@ -110,6 +110,30 @@ class ControlService:
         status_code = 200 if ok else 400
         return jsonify({'status': 'ok' if ok else 'error', 'message': message}), status_code
 
+    def set_mode(self, data):
+        #  % ------------------------------------------------------------
+        #  % Inputs: JSON payload with `mode`, optional `owner`, and optional `hardware_mode`.
+        #  % Side-effects: Updates mode arbitration state consumed by the Pi runtime and dashboard.
+        #  % Returns: A success/failure status with a descriptive message.
+        #  % ------------------------------------------------------------
+        unavailable = self._require_controller()
+        if unavailable is not None:
+            return unavailable
+
+        mode = data.get('mode')
+        owner = data.get('owner', 'browser')
+        hardware_mode = data.get('hardware_mode')
+        ok, message = self.controller.set_mode_command(mode, owner=owner, hardware_mode=hardware_mode)
+        status_code = 200 if ok else 400
+        payload = {
+            'status': 'ok' if ok else 'error',
+            'message': message,
+            'requested_mode': self.controller.get_state().get('requested_mode'),
+            'mode_owner': self.controller.get_state().get('mode_owner'),
+            'hardware_mode': self.controller.get_state().get('hardware_mode'),
+        }
+        return jsonify(payload), status_code
+
     def start_computer_bridge(self, data):
         #  % ------------------------------------------------------------
         #  % Inputs: Optional USB bridge port override.

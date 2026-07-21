@@ -54,6 +54,15 @@ def create_control_blueprint(control_service):
         #  % ------------------------------------------------------------
         return control_service.load_tle(request.json or {})
 
+    @blueprint.route('/set-mode', methods=['POST'])
+    def set_mode():
+        #  % ------------------------------------------------------------
+        #  % Inputs: JSON payload with requested mode and optional ownership metadata.
+        #  % Side-effects: Updates shared mode command state for browser/hardware arbitration.
+        #  % Returns: The function result for the caller (type depends on operation).
+        #  % ------------------------------------------------------------
+        return control_service.set_mode(request.json or {})
+
     @blueprint.route('/computer-bridge', methods=['POST'])
     def computer_bridge():
         #  % ------------------------------------------------------------
